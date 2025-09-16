@@ -1,0 +1,86 @@
+path:
+    root: ENCORE/
+    scratch: ENCORE/scratch
+    script: ENCORE/Scripts
+    gtdbtk: [path/to/gtdbtk] 
+folder:
+    data: dataset
+    logs: logs
+    benchmarks: benchmarks
+    quality: fastqc
+    qfiltered: qfiltered
+    assemblies: assemblies
+    crossMap: crossMap 
+    concoct: concoct
+    maxbin: maxbin
+    metabat: metabat
+    refined: refined_bins
+    reassembled: reassembled_bins
+    classification: GTDBTk
+    abundance: abundance
+    proteinBins: protein_bins
+    dnaBins: dna_bins
+    GEMs: GEMs
+    ecGEMs: ecGEMs
+    stats: stats
+scripts:
+    kallisto2concoct: kallisto2concoct.py
+    prepRoary: prepareRoaryInput.R
+    binFilter: binFilter.py
+    qfilterVis: qfilterVis.R
+    assemblyVis: assemblyVis.R
+    binningVis: binningVis.R
+    modelVis: modelVis.R
+    compositionVis: compositionVis.R
+    taxonomyVis: taxonomyVis.R
+    carveme: media_db.tsv
+    taxonomy: taxonomy.R
+    UniprotID: UniprotID.txt
+    createECGEM: CreateECModel.m
+    makeECGEM: meta-gecko.m
+    adjust_coverage: adjust_coverage.py
+    adaptertemplate: adapterTemplate.m
+    kegg: kegglist.txt
+    extractMet: meta-gecko-extractMet.m
+    correctMetName: correctMetName.R
+cores:
+    fastp: 16 
+    megahit: 16
+    crossMap: 16
+    concoct: 16
+    metabat: 16
+    maxbin: 16
+    refine: 16
+    reassemble: 16
+    classify: 16
+    gtdbtk: 16
+    abundance: 16
+    carveme: 16
+    smetana: 16
+    memote: 16
+    grid: 16
+    prokka: 16
+    roary: 16
+    diamond: 16
+params:
+    cutfasta: 10000
+    assemblyPreset: meta-sensitive # can change to the meta-large later for faster testing speed, or set manually 
+    assemblyMin: 1000
+    concoct: 400
+    metabatMin: 50000
+    seed: 420
+    minBin: 1500
+    refineMem: 1600
+    refineComp: 50
+    refineCont: 10
+    reassembleMem: 1600
+    reassembleComp: 50
+    reassembleCont: 10
+    carveMedia: M8
+    smetanaMedia: M1,M2,M3,M4,M5,M7,M8,M9,M10,M11,M13,M14,M15A,M15B,M16
+    smetanaSolver: CPLEX
+    roaryI: 90
+    roaryCD: 90
+envs:
+    metagem: ENCORE/envs/metagem
+    metawrap: ENCORE/envs/metawrap
