@@ -8,7 +8,7 @@ This is an end-to-end pipeline implemented using [Snakemake](https://snakemake.r
 
 # Installation
 
-### Requirements
+## 📋 Requirements
 - Linux / macOS
 - Snakemake ≥ 7.0  
 - Python ≥ 3.10  
@@ -16,7 +16,7 @@ This is an end-to-end pipeline implemented using [Snakemake](https://snakemake.r
 - GDTK-db
 - Configuration file `ENCORE_config.yaml` (Should be in the same directory with `ENCORE.sh`)
 
-### ⚙️ Environment and tools
+## ⚙️ Environment and tools
 #### MetaGEM and MetaWRAP
 
 ENCORE adapted functions from metaGEM (includes metaWRAP). We recommend users install metaGEM via `conda`
@@ -73,7 +73,7 @@ cp Installation/GECKO3_adapted_functions/loadConventionalGEM.m ${gecko_dir}/src/
 cp Installation/GECKO3_adapted_functions/makeEcModel.m ${gecko_dir}/src/geckomat/change_model/makeEcModel.m
 ```
 
-### 🚀 Running ENCORE
+## 🚀 Running ENCORE
 #### Clone the repository
 ```bash
 git clone https://github.com/yourusername/ENCORE.git
@@ -128,7 +128,7 @@ bash ENCORE.sh [COMMAND] [cohort_prefix] [script_dir] [threads]
 - `network` : Construct microbial community ecGEMs network  
 - `reporter` : Identify reporter metabolites  
 
-### Examples
+### ✨ Examples
 
 ```bash
 # Run the full pipeline with 8 threads per job
