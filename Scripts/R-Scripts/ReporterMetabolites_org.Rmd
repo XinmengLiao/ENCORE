@@ -1,0 +1,211 @@
+---
+title: "ecGEMs"
+author: "Xinmeng Liao"
+date: "2025-04-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(xlsx)
+library(ggpubr)
+library(tidyr)
+library(ggridges)
+library(ggsignif)
+library(DESeq2)
+library(ComplexHeatmap)
+library(colorRamp2)
+library(tidyverse)
+library(phyloseq)
+library(vegan)
+for (i in c("select","filter","mutate","rename","left_join")){
+  conflicted::conflict_prefer(i,"dplyr")
+}
+conflicted::conflicts_prefer(stats::sd)
+```
+
+# 1. load DAs
+```{r}
+edger <- read.csv("DAs/no filtration/edgeR.txt",header = T,sep = "\t") %>% 
+  rename(pvalue = PValue, padj = FDR, log2FoldChange = logFC)
+deseq <- read.csv("DAs/no filtration/DESeq2.txt",header = T,sep = "\t")
+alde2 <- read.csv("DAs/ALDE2.txt",header = T,sep = "\t")
+ancombc <- read.csv("DAs/ancombc.txt",header = T,sep = "\t")
+wilcoxon <- read.csv("DAs/Wilcoxon_clr.txt",header = T,sep = "\t")
+```
+
+# 2. Create FVA network
+```{r}
+taxo.all <- read.csv('/Users/xinmengliao/Documents/Project/20241117_CMA_PD_ecGEMs/validation.taxo.txt',header = T,sep = "\t") %>% 
+  mutate(species = sapply(strsplit(split = "s__",classification),`[`,2)) %>%  
+  filter(!is.na(species))
+fva.all <- read.csv('/Users/xinmengliao/Documents/Project/20241117_CMA_PD_ecGEMs/validation.fva.nozero95.txt',sep = "\t",header = T)
+#fva.all <- read.csv('/Users/xinmengliao/Documents/Project/20241117_CMA_PD_ecGEMs/validation.fva.all.txt',sep = "\t",header = T)
+
+length(unique(fva.all$sample)) # should be 46
+res <- edger
+
+fva.all1 <- fva.all %>% 
+  left_join(., taxo.all %>% select(user_genome, sample, classification), by  = c("sample","bin" = "user_genome")) %>% 
+  filter(!is.na(classification)) %>% 
+  left_join(., res,by = c("classification")) %>% distinct()
+
+create.network <- function(data, pvalue, padj, log2fc){
+  secrete <- data %>% filter(direction == "Secrete") %>%
+    select(classification,exchangeRxns,direction,.data[[pvalue]],.data[[padj]],.data[[log2fc]])  %>% 
+    unique() %>% 
+    dplyr::rename(Vertex.A = classification, Vertex.B = exchangeRxns) %>% 
+    mutate(Type.A = "Microbe", Type.B = "Metabolite")
+  network <- data %>% filter(direction != "Secrete") %>% 
+    select(exchangeRxns,classification,direction,.data[[pvalue]],.data[[padj]],.data[[log2fc]]) %>% 
+    unique() %>% 
+    dplyr::rename(Vertex.A = exchangeRxns, Vertex.B = classification) %>% 
+    mutate(Type.A = "Metabolite", Type.B = "Microbe") %>% 
+    rbind(., secrete) %>% 
+    unique() %>% 
+    filter(!is.na(.data[[padj]])) %>% 
+    filter(Vertex.A != Vertex.B) %>% 
+    group_by(edge_group = paste(pmin(Vertex.A, Vertex.B), pmax(Vertex.A, Vertex.B))) %>%
+    filter(n() == 1) %>%  
+    ungroup() %>% 
+    select(-edge_group) %>% 
+    select(Vertex.A, Type.A, Vertex.B, Type.B,everything())
+  return(network)
+}
+
+network.all <- create.network(fva.all1,pvalue = "pvalue",padj = "padj",log2fc = "log2FoldChange")
+network.uptake <- network.all %>% filter(direction == "Uptake")
+```
+
+# 3. Reporter metabolites
+```{r}
+rma <- function(network,pvalue,logFC, microbeFoldChanges = F,filter.extreme = F,reaction){
+  
+  rma.sub <- function(network){
+    # change the microbe pvalue into z-score
+    if(filter.extreme == T) {
+      network <- network %>% 
+        filter(.data[[pvalue]] < 0.99)
+    }
+    
+    network <- network %>% 
+      filter(!is.na(.data[[pvalue]])) %>% 
+      mutate(zscore = qnorm(1 - .data[[pvalue]])) %>%  
+      mutate(zscore = ifelse(is.na(zscore), 0, zscore)) %>% 
+      mutate(zscore = case_when(zscore == -Inf ~ -15,
+                                zscore == Inf ~ 15, TRUE ~ zscore)) 
+    
+  # For each metabolite, find out the associated microbes
+  mets <- unique(c(network %>% filter(Type.A == "Metabolite") %>% pull(Vertex.A),
+                   network %>% filter(Type.B == "Metabolite") %>% pull(Vertex.B)))
+  
+  # calculate weighted zscores
+  n_mets <- length(unique(mets))
+  n_microbe <- rep(NA, n_mets)
+  metZScores <- rep(NA, n_mets)
+  metNGenes <- rep(NA, n_mets)
+  meanZ <- rep(NA, n_mets)
+  stdZ <- rep(NA, n_mets)
+  microbe.zscore.list <- list()
+  
+  for (i in 1:n_mets){
+    met.network <- network %>% 
+      filter(Vertex.A == mets[i] | Vertex.B == mets[i]) %>% unique()
+    metZScores[i] <- sum(met.network$zscore) / sqrt(nrow(met.network))
+    meanZ[i] <- mean(met.network$zscore)
+    stdZ[i] <- sd(met.network$zscore)
+    metNGenes[i] <- mets[i]
+    n_microbe[i] <- nrow(met.network)
+    microbe.zscore.list[[i]] <- met.network$zscore %>% unlist()
+  }
+  
+  # Filter out NA scores
+  valid_mets <- which(!is.na(metZScores))
+  mets <- mets[valid_mets]
+  n_microbe <- n_microbe[valid_mets]
+  metZScores <- metZScores[valid_mets]
+  metNGenes <- metNGenes[valid_mets]
+  meanZ <- meanZ[valid_mets]
+  stdZ <- stdZ[valid_mets]
+  
+  # Background correction
+  set.seed(42)
+  n_sim <- 1000
+  all_zscores <- unlist(microbe.zscore.list)
+  
+  # Precompute background stats for each k
+  unique_k <- unique(n_microbe)
+  background_means <- numeric(length(unique_k))
+  background_sds <- numeric(length(unique_k))
+  names(background_means) <- names(background_sds) <- unique_k
+  
+  background_scores_list <- list()
+
+  for (j in seq_along(unique_k)) {
+    k <- unique_k[j]
+    sampled_scores <- replicate(n_sim, {
+      sampled_zs <- sample(all_zscores, k, replace = TRUE)
+      random_dirs <- ifelse(runif(k) < 0.5, 1, -1)
+      directional_zs <- sampled_zs * random_dirs
+      sum(directional_zs) / sqrt(k)
+    })
+    background_means[j] <- mean(sampled_scores)
+    background_sds[j] <- sd(sampled_scores)
+    background_scores_list[[as.character(k)]] <- sampled_scores
+  }
+
+  # Apply background correction using precomputed means and sds
+  Z_corrected <- numeric(length(metZScores))
+  p_corrected <- numeric(length(metZScores))
+  
+  for (m in seq_along(metZScores)) {
+    k <- as.character(n_microbe[m])
+    mu_k <- background_means[k]
+    sigma_k <- background_sds[k]
+    Z_corrected[m] <- (metZScores[m] - mu_k) / sigma_k
+    #p_corrected[m] <- 1 - pnorm(abs(Z_corrected[m]))
+    p_corrected[m] <- 2 * (1 - pnorm(abs(Z_corrected[m])))
+  }
+  
+  metabolite_scores <- tibble(metabolite = metNGenes,
+                              k = n_microbe,
+                              weighted_Zdirection = metZScores,
+                              weighted_Zdirection_corrected = Z_corrected,
+                              p_corrected = p_corrected) %>% 
+    as.data.frame() %>% 
+    arrange(p_corrected) %>%
+    mutate(p_corrected = as.numeric(p_corrected)) %>% 
+    left_join(., reaction %>% 
+                select(exchangeRxns, equations), by = c("metabolite" = "exchangeRxns")) %>% 
+    unique() %>%
+    mutate(equations = sapply(strsplit(split = " <=> ",equations),`[`,1)) %>% 
+    mutate(equations = sapply(strsplit(split = " => ",equations),`[`,1)) %>% 
+    mutate(equations = gsub("\\[e\\]$","",equations))
+  return(metabolite_scores)
+  }
+
+  if(microbeFoldChanges == T){
+    met.all <- rma.sub(network)
+    network.up <- network %>% filter(.data[[logFC]] > 0)
+    network.down <- network %>% filter(.data[[logFC]]  < 0) 
+    met.up <- rma.sub(network.up)
+    met.down <- rma.sub(network.down)
+    return(list(all.met = met.all, increased.met = met.up, decreased.met = met.down))
+  }else{
+    met.all <- rma.sub(network)
+    return(list(all.met = met.all))
+  }
+}
+
+rma.all <- rma(network.all,pvalue = "pvalue",logFC = "log2FoldChange", reaction = fva.all1,
+               filter.extreme = T,microbeFoldChanges = T)
+rma.uptake <- rma(network.uptake,pvalue = "pvalue",logFC = "log2FoldChange",reaction = fva.all1,
+                  filter.extreme = T,microbeFoldChanges = T)
+
+# extract up-, down-regulated subnetworks
+up.df <- rma.uptake[2] %>% as.data.frame()
+down.df <- rma.uptake[3] %>% as.data.frame()
+
+```
+
