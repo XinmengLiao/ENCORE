@@ -1,0 +1,35 @@
+# Snakemake files
+.snakemake/
+.snakemake*
+
+# Temporary and log files
+*.log
+*.tmp
+
+# Output directories
+test/
+output/
+scratch/
+
+# Wiki directory
+ENCORE.wiki/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Conda environments
+envs/*/
