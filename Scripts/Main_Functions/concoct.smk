@@ -1,7 +1,7 @@
-configfile: "ENCORE_config.yaml"
-
 import os
 import glob
+
+configfile: os.path.join(workflow.basedir, "../../ENCORE_config.yaml")
 
 def get_sampleids_from_path_pattern(path_pattern):
     ids = [os.path.basename(val).split('_R')[0] for val in (glob.glob(path_pattern))]
@@ -11,11 +11,23 @@ def get_sampleids_from_path_pattern(path_pattern):
             new_list.append(var)
     return new_list
 
-SAMPLE_INDEX = get_sampleids_from_path_pattern(f"{config['path']['root']}/{config['folder']['data']}/*")
+DATA_FOLDER = config.get('DATA_FOLDER', 'Toy_Dataset')
+
+# Build the root path - prefer path_root, then OUTPUT_DIR, then config value
+root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path']['root']
+
+# Handle relative paths for root_path
+if not os.path.isabs(root_path):
+    root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
+
+assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
+print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
+SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
+print(f"DEBUG: Found samples: {SAMPLE_INDEX}")
 
 rule all:
     input:
-        expand(f"{config['path']['root']}/{config['folder']['concoct']}/{{sampleID}}/{{sampleID}}.concoct-bins", sampleID=SAMPLE_INDEX)
+        expand(f"{root_path}/{config['folder']['concoct']}/{{sampleID}}/{{sampleID}}.concoct-bins", sampleID=SAMPLE_INDEX)
 
 
 #############
@@ -23,66 +35,53 @@ rule all:
 #############
 rule concoct:
     input:
-        contigs = f"{config['path']['root']}/{config['folder']['assemblies']}/{{sampleID}}/contigs.fasta.gz"
+        contigs = f"{root_path}/{config['folder']['assemblies']}/{{sampleID}}/contigs.fasta.gz",
+        coverage = f"{root_path}/{config['folder']['concoct']}/{{sampleID}}/cov/coverage_table.tsv"
     output:
-        directory(f"{config['path']['root']}/{config['folder']['concoct']}/{{sampleID}}/{{sampleID}}.concoct-bins")
+        directory(f"{root_path}/{config['folder']['concoct']}/{{sampleID}}/{{sampleID}}.concoct-bins")
     benchmark:
-        f"{config['path']['root']}/{config['folder']['benchmarks']}/{{sampleID}}.concoct.benchmark.txt"
+        f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.concoct.benchmark.txt"
     log:
-        f"{config['path']['root']}/{config['folder']['logs']}/{{sampleID}}_concoct.log"
+        f"{root_path}/{config['folder']['logs']}/{{sampleID}}_concoct.log"
     shell:
         """
         echo -e "$(date)\nSection starts\n Concoct \n"
-        
-        # Actiavte the conda environment 
-        set +e
-        set +u 
-        source activate metagem 
-        set -u 
-        set -e
 
-        # Create output folder
-        mkdir -p $(dirname {output})
-
-        # Make job specific scratch dir
         sample=$(echo $(basename $(dirname {input.contigs})))
-        echo -e "\nCreating temporary directory {config[path][scratch]}/{config[folder][concoct]}/${{sample}} ... "
-        mkdir -p {config[path][scratch]}/{config[folder][concoct]}/${{sample}}
+        echo -e "\nCreating temporary directory {root_path}/{config[folder][crossMap]}/${{sample}} ... "
+        mkdir -p {root_path}/{config[folder][crossMap]}/${{sample}}
 
-        # Move into scratch dir
-        cd {config[path][scratch]}/{config[folder][concoct]}/${{sample}}
+        cd {root_path}/{config[folder][crossMap]}/${{sample}}
 
-        # Copy files
-        cp {input.contigs} $(dirname {output})/cov/coverage_table.tsv ./
+        cp {input.contigs} {input.coverage} ./
 
         echo "Unzipping assembly ... "
         gunzip -f $(basename {input.contigs})
 
-        echo "Adujusting coverage table."
-        cp {config[path][root]}/{config[folder][scripts]}/{config[scripts][adjust_coverage]} ./
+        echo "Adjusting coverage table."
+        cp $(dirname {root_path})/{config[path][scripts]}/PythonScripts/adjust_coverage.py ./
         python3 adjust_coverage.py
 
         echo -e "Done. \nCutting up contigs (default 10kbp chunks) ... "
         cut_up_fasta.py -c {config[params][cutfasta]} -o 0 -m $(echo $(basename {input.contigs})|sed 's/.gz//') > assembly_c10k.fa
-        
-        echo -e "\nRunning CONCOCT ... "
-        concoct --coverage_file $(dirname {output})/cov/coverage_table.tsv \
-            --composition_file assembly_c10k.fa \
-            -b $(basename $(dirname {output})) \
-            -t {config[path][cores]}/{config[folder][concoct]} \
-            -c 400 -i 350 \
-            2> {log}
-            
-        echo -e "\nMerging clustering results into original contigs ... "
-        merge_cutup_clustering.py $(basename $(dirname {output}))_clustering_gt1000.csv > $(basename $(dirname {output}))_clustering_merged.csv
-        
-        echo -e "\nExtracting bins ... "
-        mkdir -p $(basename {output})
-        extract_fasta_bins.py $(echo $(basename {input.contigs})|sed 's/.gz//') $(basename $(dirname {output}))_clustering_merged.csv --output_path $(basename {output})
-		
-        # Move final result files to output folder
-        mkdir -p $(dirname {output})
-        mv $(basename {output}) *.txt *.csv $(dirname {output})
 
-	    echo "Concoct Done at $(date)."
+        echo -e "\nRunning CONCOCT ... "
+        concoct --coverage_file coverage_table.tsv \
+            --composition_file assembly_c10k.fa \
+            -b ${{sample}} \
+            -t {config[cores][concoct]} \
+            -c {config[params][concoct]} \
+            -i {config[params][concoctMinLength]}
+
+        echo -e "\nMerging clustering results into original contigs ... "
+        merge_cutup_clustering.py ${{sample}}_clustering_gt1000.csv > ${{sample}}_clustering_merged.csv
+
+        echo -e "\nExtracting bins ... "
+        mkdir -p ${{sample}}.concoct-bins
+        extract_fasta_bins.py $(echo $(basename {input.contigs})|sed 's/.gz//') ${{sample}}_clustering_merged.csv --output_path ${{sample}}.concoct-bins
+
+        mkdir -p {output}
+        mv ${{sample}}.concoct-bins/* {output}/
+
+        echo "Concoct Done at $(date)."
         """

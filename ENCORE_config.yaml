@@ -1,10 +1,9 @@
 path:
     root: ENCORE/
-    scratch: ENCORE/scratch
-    script: ENCORE/Scripts
+    scratch: scratch
+    scripts: Scripts
     gtdbtk: [path/to/gtdbtk] 
 folder:
-    data: dataset
     logs: logs
     benchmarks: benchmarks
     quality: fastqc
@@ -23,29 +22,34 @@ folder:
     GEMs: GEMs
     ecGEMs: ecGEMs
     stats: stats
-scripts:
-    kallisto2concoct: kallisto2concoct.py
-    prepRoary: prepareRoaryInput.R
-    binFilter: binFilter.py
-    qfilterVis: qfilterVis.R
+    scripts: Scripts
+DataforScripts:
     assemblyVis: assemblyVis.R
     binningVis: binningVis.R
     modelVis: modelVis.R
     compositionVis: compositionVis.R
-    taxonomyVis: taxonomyVis.R
     carveme: media_db.tsv
-    taxonomy: taxonomy.R
     UniprotID: UniprotID.txt
-    createECGEM: CreateECModel.m
-    makeECGEM: meta-gecko.m
-    adjust_coverage: adjust_coverage.py
-    adaptertemplate: adapterTemplate.m
     kegg: kegglist.txt
-    extractMet: meta-gecko-extractMet.m
-    correctMetName: correctMetName.R
+PythonScripts:
+    kallisto2concoct: Scripts/PythonScripts/kallisto2concoct.py
+    binFilter: Scripts/PythonScripts/binFilter.py
+    adjust_coverage: Scripts/PythonScripts/adjust_coverage.py
+MatlabScripts:
+    createECGEM: Scripts/MatlabScripts/CreateECModel.m
+    makeECGEM: Scripts/MatlabScripts/meta-gecko.m
+    adaptertemplate: Scripts/MatlabScripts/adapterTemplate.m
+    extractMet: Scripts/MatlabScripts/meta-gecko-extractMet.m
+Rscripts:
+    assemblyVis: Scripts/RScripts/assemblyVis.R
+    binningVis: Scripts/RScripts/binningVis.R
+    modelVis: Scripts/RScripts/modelVis.R
+    compositionVis: Scripts/RScripts/compositionVis.R
+    taxonomy: Scripts/RScripts/taxonomy.R
+    correctMetName: Scripts/RScripts/correctMetName.R
 cores:
     fastp: 16 
-    megahit: 16
+    megahit: 64
     crossMap: 16
     concoct: 16
     metabat: 16
@@ -67,9 +71,13 @@ params:
     assemblyPreset: meta-sensitive # can change to the meta-large later for faster testing speed, or set manually 
     assemblyMin: 1000
     concoct: 400
+    concoctMinLength: 350
     metabatMin: 50000
     seed: 420
     minBin: 1500
+    maxbinProb: 0.9
+    maxbinMinLength: 1000
+    maxbinIteration: 10
     refineMem: 1600
     refineComp: 50
     refineCont: 10

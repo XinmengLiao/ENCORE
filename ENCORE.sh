@@ -6,104 +6,315 @@ set -euo pipefail
 # ================================
 OUTPUT_DIR=""
 COHORT=""
+DATA_FOLDER=""
 SCRIPTS_DIR="Scripts"  
 CORES=1
+DRY_RUN=false
+QUIET=false
+declare -a MODULES=()
+
+# ================================
+# Module definitions (using simple arrays for zsh compatibility)
+# ================================
+METAGENOME_MODULES="quality trim assembly crossmap maxbin concoct metabat refinement reassembly abundance taxonomy"
+METABOLIC_MODULES="extraction gem ecgem"
+REPORTER_MODULES="network reporter"
+
+# Function to get snakemake file for a module
+get_smk_file() {
+    case $1 in
+        quality) echo "fastqc.smk" ;;
+        trim) echo "fastp.smk" ;;
+        assembly) echo "megahit.smk" ;;
+        crossmap) echo "crossmapping.smk" ;;
+        maxbin) echo "maxbin.smk" ;;
+        concoct) echo "concoct.smk" ;;
+        metabat) echo "metabat.smk" ;;
+        refinement) echo "refinement.smk" ;;
+        reassembly) echo "reassembly.smk" ;;
+        abundance) echo "AbundanceCalculation.smk" ;;
+        taxonomy) echo "taxonomy.smk" ;;
+        extraction) echo "extraction.smk" ;;
+        gem) echo "carveme.smk" ;;
+        ecgem) echo "GEMtoECGEM.smk" ;;
+        network) echo "CoGEMNetwork.smk" ;;
+        reporter) echo "ReporterMetabolite.smk" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Function to get description for a module
+get_module_desc() {
+    case $1 in
+        quality) echo "Read quality check" ;;
+        trim) echo "Read trimming" ;;
+        assembly) echo "Contig assembly" ;;
+        crossmap) echo "Prepare depth files for binning" ;;
+        maxbin) echo "Binning with MaxBin2" ;;
+        concoct) echo "Binning with CONCOCT" ;;
+        metabat) echo "Binning with MetaBat2" ;;
+        refinement) echo "Bin refinement" ;;
+        reassembly) echo "Bin reassembly" ;;
+        abundance) echo "Abundance Calculation" ;;
+        taxonomy) echo "Bin classifications to species level" ;;
+        extraction) echo "Extract genomic and proteomic sequences" ;;
+        gem) echo "Reconstruction of GEMs" ;;
+        ecgem) echo "Reconstruction of ecGEMs" ;;
+        network) echo "Construct microbial community ecGEMs network" ;;
+        reporter) echo "Identify reporter metabolites" ;;
+        *) return 1 ;;
+    esac
+}
+
+# ================================
+# Helper functions
+# ================================
+log_info() {
+    echo -e "[INFO] $*"
+
+}
+
+log_success() {
+    echo -e "[✓] $*"
+}
+
+log_warning() {
+    echo -e "[WARNING] $*"
+}
+
+log_error() {
+    echo -e "[ERROR] $*"
+}
+
+validate_env() {
+    if [[ -z "$OUTPUT_DIR" ]]; then
+        log_error "Output directory is required (-o/--output-dir)"
+        return 1
+    fi
+    
+    if [[ -z "$COHORT" ]]; then
+        log_error "Cohort name is required (-c/--cohort)"
+        return 1
+    fi
+    
+    if [[ -z "$DATA_FOLDER" ]]; then
+        log_error "Data folder is required (-d/--data-folder)"
+        return 1
+    fi
+    
+    if ! command -v snakemake &> /dev/null; then
+        log_error "Snakemake is not installed or not in PATH"
+        return 1
+    fi
+    
+    if [[ ! -d "$SCRIPTS_DIR/Main_Functions" ]]; then
+        log_error "Scripts directory not found: $SCRIPTS_DIR/Main_Functions"
+        return 1
+    fi
+    
+    return 0
+}
+
+validate_module() {
+    local module=$1
+    # Check if module is in any of the module lists
+    if [[ "$METAGENOME_MODULES $METABOLIC_MODULES $REPORTER_MODULES" == *"$module"* ]]; then
+        return 0
+    fi
+    return 1
+}
+
+list_modules() {
+    log_info "Available modules:"
+    echo ""
+    echo -e "Metagenome Analysis:"
+    for mod in $METAGENOME_MODULES; do
+        printf "  %-15s %s\n" "$mod" "$(get_module_desc $mod)"
+    done
+    echo ""
+    echo -e "Metabolic Modelling:"
+    for mod in $METABOLIC_MODULES; do
+        printf "  %-15s %s\n" "$mod" "$(get_module_desc $mod)"
+    done
+    echo ""
+    echo -e "Reporter Metabolites:"
+    for mod in $REPORTER_MODULES; do
+        printf "  %-15s %s\n" "$mod" "$(get_module_desc $mod)"
+    done
+}
 
 # ================================
 # Snakemake wrapper functions
 # ================================
 
-run_snakemake () {
-    local smk_file=$1
-    echo ">>> Running $smk_file ..."
-    snakemake -s "${SCRIPTS_DIR}/${smk_file}" --cores $CORES --config OUTPUT_DIR="$OUTPUT_DIR" COHORT="$COHORT"
-    echo ">>> Finished $smk_file"
+run_snakemake() {
+    local module=$1
+    local smk_file
+    smk_file=$(get_smk_file "$module") || {
+        log_error "Unknown module: $module"
+        return 1
+    }
+    
+    if [[ ! -f "${SCRIPTS_DIR}/Main_Functions/${smk_file}" ]]; then
+        log_error "Snakemake file not found: ${SCRIPTS_DIR}/Main_Functions/${smk_file}"
+        return 1
+    fi
+    
+    local desc
+    desc=$(get_module_desc "$module")
+    log_info "Running: $desc ($module)"
+    
+    local snakemake_opts="--cores $CORES --config OUTPUT_DIR=\"$OUTPUT_DIR\" COHORT=\"$COHORT\" DATA_FOLDER=\"$DATA_FOLDER\""
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        snakemake_opts="$snakemake_opts --dry-run"
+    fi
+    
+    eval "snakemake -s \"${SCRIPTS_DIR}/Main_Functions/${smk_file}\" $snakemake_opts"
+    
+    if [[ $? -eq 0 ]]; then
+        log_success "Completed: $module"
+        return 0
+    else
+        log_error "Failed: $module"
+        return 1
+    fi
 }
 
-quality()       { run_snakemake "fastqc.smk"; }
-trim()          { run_snakemake "fastp.smk"; }
-assembly()      { run_snakemake "megahit.smk"; }
-crossmap()      { run_snakemake "crossmapping.smk"; }
-maxbin()        { run_snakemake "maxbin.smk"; }
-concoct()       { run_snakemake "concoct.smk"; }
-metabat()       { run_snakemake "metabat.smk"; }
-refinement()    { run_snakemake "refinement.smk"; }
-reassembly()    { run_snakemake "reassembly.smk"; }
-abundance()     { run_snakemake "AbundanceCalculation.smk"; }
-taxonomy()      { run_snakemake "taxonomy.smk"; }
-daa()           { run_snakemake "daa.smk"; }
+run_modules() {
+    local failed_modules=()
+    
+    log_info "Running ${#MODULES[@]} module(s)"
+    echo ""
+    
+    for module in "${MODULES[@]}"; do
+        if ! validate_module "$module"; then
+            log_error "Unknown module: $module"
+            failed_modules+=("$module")
+            continue
+        fi
+        
+        if ! run_snakemake "$module"; then
+            failed_modules+=("$module")
+        fi
+        echo ""
+    done
+    
+    # Summary
+    echo -e "=== Pipeline Summary ==="
+    local completed=$((${#MODULES[@]} - ${#failed_modules[@]}))
+    log_success "Completed: $completed/${#MODULES[@]} module(s)"
+    
+    if [[ ${#failed_modules[@]} -gt 0 ]]; then
+        log_error "Failed modules: ${failed_modules[*]}"
+        return 1
+    fi
+    
+    return 0
+}
 
-extraction()    { run_snakemake "extraction.smk"; }
-gem()           { run_snakemake "carveme.smk"; }
-ecgem()         { run_snakemake "GEMtoECGEM.smk"; }
 
-network()       { run_snakemake "CoGEMNetwork.smk"; }
-reporter()      { run_snakemake "ReporterMetabolite.smk"; }
+quality()       { run_snakemake "quality"; }
+trim()          { run_snakemake "trim"; }
+assembly()      { run_snakemake "assembly"; }
+crossmap()      { run_snakemake "crossmap"; }
+maxbin()        { run_snakemake "maxbin"; }
+concoct()       { run_snakemake "concoct"; }
+metabat()       { run_snakemake "metabat"; }
+refinement()    { run_snakemake "refinement"; }
+reassembly()    { run_snakemake "reassembly"; }
+abundance()     { run_snakemake "abundance"; }
+taxonomy()      { run_snakemake "taxonomy"; }
 
-all_pipeline()  { run_snakemake "WholePipeline.smk"; }
+extraction()    { run_snakemake "extraction"; }
+gem()           { run_snakemake "gem"; }
+ecgem()         { run_snakemake "ecgem"; }
+
+network()       { run_snakemake "network"; }
+reporter()      { run_snakemake "reporter"; }
 
 # ================================
 # Usage function
 # ================================
 usage() {
     cat << EOF
-Usage: $0 [OPTIONS]
+╔═══════════════════════════════════════════════════════════════╗
+║          ENCORE - Metagenomic Pipeline                          ║
+║   Enhanced metagenome analysis with metabolic modelling         ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Usage:
+  $0 [OPTIONS] <modules>
 
 OPTIONS:
-    
-    -a, --all           Run the whole ENCORE pipeline
-    -o, --output_dir    Output directory
-    --cohort            Cohort name prefix
-    -t, --thread        Threads number for running jobs 
-    -h, --help          Display this help message
-    
+  -o, --output-dir <dir>      Output directory (required)
+  -c, --cohort <name>         Cohort/sample prefix (required)
+  -d, --data-folder <name>    Data folder name (default: Toy_Dataset)
+  -t, --cores <num>           Number of CPU cores (default: 1)
+  -s, --scripts-dir <dir>     Scripts directory (default: Scripts)
+  
+  -n, --dry-run               Perform a dry run without executing
+ 
+  -l, --list                  List all available modules
+  -h, --help                  Show this help message
 
-    ---- Metagenome --------------------------
+EXAMPLES:
+  # Run a single module
+  bash $0 -o ./output -c sample1 -d my_data --quality
 
-    --quality           Read quality check
-    --trim              Read trimming
-    --assembly          Contig assembly
-    --crossmap          Prepare depth files for binning
-    --maxbin            Binning with MaxBin2
-    --concoct           Binning with CONCOCT
-    --metabat           Binning with MetaBat2
-    --refinement        Bin refinement
-    --reassembly        Bin reassembly
-    --abundance         Abundance Calculation
-    --taxonomy          Bin classifications to species level
-    -daa                Differential Abundance Analysis
-    
-    ------------------------------------------
-    
+  # Run multiple modules in sequence
+  bash $0 -o ./output -c sample1 -d my_data --quality --trim --assembly
 
-    ---- Genome-scale Metabolic Modelling ----
+  # Run an entire workflow
+  bash $0 -o ./output -c sample1 -d my_data --metagenome --metabolic
 
-    --extract           Extract genomic and proteomic sequences
-    --gem               Reconstruction of GEMs
-    --ecgem             Reconstruction of ecGEMs
-    ------------------------------------------
-    
+  # Dry run to see what would be executed
+  bash $0 -o ./output -c sample1 --dry-run --assembly
 
-    ---- Reporter Metabolite -----------------
+  # List all available modules
+  bash $0 --list
 
-    --network           Construct microbial community ecGEMs network
-    --reporter          Identify reporter metabolites
-    ------------------------------------------
+WORKFLOW GROUPS:
+  --metagenome    Run all metagenome analysis modules (quality, trim, assembly, etc.)
+  --metabolic     Run metabolic modelling modules (extraction, gem, ecgem)
+  --reporter      Run reporter metabolite modules (network, reporter)
 
+INDIVIDUAL MODULES (Metagenome):
+  --quality       Read quality check
+  --trim          Read trimming
+  --assembly      Contig assembly
+  --crossmap      Prepare depth files for binning
+  --maxbin        Binning with MaxBin2
+  --concoct       Binning with CONCOCT
+  --metabat       Binning with MetaBat2
+  --refinement    Bin refinement
+  --reassembly    Bin reassembly
+  --abundance     Abundance Calculation
+  --taxonomy      Bin classifications to species level
 
-REQUIRED ARGUMENTS:
-    - input-sample: Sample ID
-    - output-directory: Output directory path
-    - vcf: User uploaded vcf file
+INDIVIDUAL MODULES (Metabolic):
+  --extract       Extract genomic and proteomic sequences
+  --gem           Reconstruction of GEMs
+  --ecgem         Reconstruction of ecGEMs
+
+INDIVIDUAL MODULES (Reporter):
+  --network       Construct microbial community ecGEMs network
+  --reporter      Identify reporter metabolites
+
 EOF
 }
 
 # ================================
 # Parse arguments
 # ================================
+if [[ $# -eq 0 ]]; then
+    usage
+    exit 0
+fi
+
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -o|--output-directory)
+        -o|--output-dir)
             OUTPUT_DIR="$2"
             shift 2
             ;;
@@ -111,44 +322,84 @@ while [[ $# -gt 0 ]]; do
             COHORT="$2"
             shift 2
             ;;
+        -d|--data-folder)
+            DATA_FOLDER="$2"
+            shift 2
+            ;;
         -s|--scripts-dir)
             SCRIPTS_DIR="$2"
             shift 2
             ;;
-        -j|--cores)
+        -t|--cores)
             CORES="$2"
             shift 2
+            ;;
+        -n|--dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -l|--list)
+            list_modules
+            exit 0
             ;;
         -h|--help)
             usage
             exit 0
             ;;
-        *)
-            COMMAND="$1"
+        --metagenome)
+            for mod in $METAGENOME_MODULES; do
+                MODULES+=("$mod")
+            done
             shift
+            ;;
+        --metabolic)
+            for mod in $METABOLIC_MODULES; do
+                MODULES+=("$mod")
+            done
+            shift
+            ;;
+        --reporter)
+            for mod in $REPORTER_MODULES; do
+                MODULES+=("$mod")
+            done
+            shift
+            ;;
+        --quality|--trim|--assembly|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extract|--gem|--ecgem|--network|--reporter)
+            # Remove leading dashes
+            module="${1#--}"
+            MODULES+=("$module")
+            shift
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            usage
+            exit 1
             ;;
     esac
 done
 
 # ================================
-# Validate required arguments
+# Validate and execute
 # ================================
-if [[ -z "${COMMAND:-}" ]]; then
-    echo "Error: No command specified"
+if ! validate_env; then
+    exit 1
+fi
+
+if [[ ${#MODULES[@]} -eq 0 ]]; then
+    log_error "No modules specified"
+    echo ""
     usage
     exit 1
 fi
 
-# ================================
-# Run the chosen command
-# ================================
-case "$COMMAND" in
-    quality|trim|assembly|crossmap|maxbin|concoct|metabat|refinement|reassembly|abundance|taxonomy|daa|extraction|gem|ecgem|network|reporter|all)
-        $COMMAND
-        ;;
-    *)
-        echo "Error: Unknown command $COMMAND"
-        usage
-        exit 1
-        ;;
-esac
+log_info "ENCORE Pipeline - Configuration"
+log_info "Output directory: $OUTPUT_DIR"
+log_info "Cohort: $COHORT"
+log_info "Data folder: $DATA_FOLDER"
+log_info "CPU cores: $CORES"
+[[ "$DRY_RUN" == true ]] && log_warning "DRY RUN MODE - No modules will be executed"
+echo ""
+
+if ! run_modules; then
+    exit 1
+fi

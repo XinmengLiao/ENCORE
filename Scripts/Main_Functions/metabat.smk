@@ -1,7 +1,7 @@
-configfile: "ENCORE_config.yaml"
-
 import os
 import glob
+
+configfile: os.path.join(workflow.basedir, "../../ENCORE_config.yaml")
 
 def get_sampleids_from_path_pattern(path_pattern):
     ids = [os.path.basename(val).split('_R')[0] for val in (glob.glob(path_pattern))]
@@ -11,11 +11,21 @@ def get_sampleids_from_path_pattern(path_pattern):
             new_list.append(var)
     return new_list
 
-SAMPLE_INDEX = get_sampleids_from_path_pattern(f'{HOME}/dataset[1-4]/*')
+# Build the root path - prefer path_root, then OUTPUT_DIR, then config value
+root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path']['root']
+
+# Handle relative paths for root_path
+if not os.path.isabs(root_path):
+    root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
+
+assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
+print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
+SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
+print(f"DEBUG: Found samples: {SAMPLE_INDEX}")
 
 rule all:
-	input:
-            expand("{home}/metabat/{sampleID}/{sampleID}.metabat-bins", home=HOME, sampleID=SAMPLE_INDEX), # Metabat output
+    input:
+        expand(f"{root_path}/{config['folder']['metabat']}/{{sampleID}}/{{sampleID}}.metabat-bins", sampleID=SAMPLE_INDEX)
 
 
 ##################
@@ -23,63 +33,48 @@ rule all:
 ##################
 rule metabatCross:
     input:
-        assembly = "{home}/megahit_assembled/{sampleID}/contigs.fasta.gz",
-        depth = "{home}/metabat/{sampleID}/cov"
+        assembly = f"{root_path}/{config['folder']['assemblies']}/{{sampleID}}/contigs.fasta.gz",
+        depth = f"{root_path}/{config['folder']['metabat']}/{{sampleID}}/cov"
     output:
-        directory("{home}/metabat/{sampleID}/{sampleID}.metabat-bins")
+        directory(f"{root_path}/{config['folder']['metabat']}/{{sampleID}}/{{sampleID}}.metabat-bins")
     benchmark:
-        "{home}/benchmark/{sampleID}.metabat.benchmark.txt"
+        f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.metabat.benchmark.txt"
     log:
-        "{home}/logs/{sampleID}/{sampleID}_metabatcross.log"
+        f"{root_path}/{config['folder']['logs']}/{{sampleID}}_metabat.log"
     shell:
         """
         echo -e "$(date)\nSection starts\n Metabat \n"
 
-        # Actiavte the conda environment 
-        set +e
-        set +u 
-        source activate metagem 
-        set -u 
-        set -e
-        
-        # Make job specific scratch dir
-        echo -e "\nCreating temporary directory {config[path][scratch]}/{config[folder][metabat]}/{wildcards.sampleID} ... "
-        mkdir -p {config[path][scratch]}/{config[folder][metabat]}/{wildcards.sampleID}
+        sampleID=$(echo $(basename $(dirname {input.assembly})))
+        echo -e "\nCreating temporary directory {root_path}/{config[path][scratch]}/metabat/${{sampleID}} ... "
+        mkdir -p {root_path}/{config[path][scratch]}/metabat/${{sampleID}}
 
-        # Move into scratch dir
-        echo -e "\nMoving into temporary directory {config[path][scratch]}/{config[folder][metabat]}/{wildcards.sampleID} ... "
-        cd {config[path][scratch]}/{config[folder][metabat]}/{wildcards.sampleID}
+        echo -e "\nMoving into temporary directory {root_path}/{config[path][scratch]}/metabat/${{sampleID}} ... "
+        cd {root_path}/{config[path][scratch]}/metabat/${{sampleID}}
 
-        # Create output folder
         mkdir -p {output}
-        
-        # Copy with verification
+
         cp {input.assembly} ./contigs.fasta.gz
         ls -l ./contigs.fasta.gz >> {log}
-        
+
         cp {input.depth}/*all.depth ./
         ls -l ./*.all.depth >> {log}
-        
-        # Unzip with verification
+
         gunzip -f ./contigs.fasta.gz
         ls -l ./contigs.fasta >> {log}
-        
-        # Check file sizes
+
         du -h ./contigs.fasta >> {log}
         du -h ./*.all.depth >> {log}
-        
-        # Run metabat2 with memory info
+
         /usr/bin/time -v metabat2 -i contigs.fasta \
-            -a {wildcards.sampleID}.all.depth \
+            -a ${{sampleID}}.all.depth \
             -s {config[params][metabatMin]} \
             -v \
             --seed {config[params][seed]} \
             -t 0 \
             -m {config[params][minBin]} \
-            -o {wildcards.sampleID} \
-            2>> {log}
+            -o ${{sampleID}}
 
-        # Check and move .fa files if they exist
         if compgen -G "*.fa" > /dev/null; then
             mv *.fa {output}
             echo "Moved .fa files to output directory" >> {log}
@@ -88,5 +83,7 @@ rule metabatCross:
             echo "No .fa files found to move" >> {log}
         fi
 
-        echo "Metabat done at $(date). "
+        rm -rf {root_path}/{config[path][scratch]}/metabat/${{sampleID}}
+
+        echo "Metabat done at $(date)."
         """
