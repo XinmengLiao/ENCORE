@@ -9,7 +9,7 @@ This is an end-to-end pipeline implemented using [Snakemake](https://snakemake.r
 # Installation
 
 ## 📋 Requirements
-- Linux / macOS
+- Linux
 - Snakemake ≥ 7.0  
 - Python ≥ 3.10  
 - Conda (MetaGEM, MetaWRAP)
