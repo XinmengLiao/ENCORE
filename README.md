@@ -1,4 +1,8 @@
-# Welcome to ENCORE
+<h1>
+  <img src="https://raw.githubusercontent.com/XinmengLiao/ENCORE/main/Logo/Blue.png" width="80">
+  Welcome to ENCORE
+</h1>
+
 This is an end-to-end pipeline implemented using [Snakemake](https://snakemake.readthedocs.io/) to reconstruct enzyme-constrained community metabolic models and identify reporter metabolites from metagenomes.
 
 <img width="1501" height="767" alt="image" src="https://github.com/user-attachments/assets/6179646a-712e-4f2b-82b9-87897ad3fe84" />
