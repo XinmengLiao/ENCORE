@@ -14,7 +14,7 @@ This is an end-to-end pipeline implemented using [Snakemake](https://snakemake.r
 
 ## 📋 Requirements
 - Linux
-- Snakemake ≥ 7.0  
+- Snakemake ≥ 3.5  
 - Python ≥ 3.10  
 - Conda (MetaGEM, MetaWRAP)
 - GDTK-db
