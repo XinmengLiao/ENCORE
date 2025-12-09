@@ -1,7 +1,7 @@
-configfile: "ENCORE_config.yaml"
-
 import os
 import glob
+
+configfile: os.path.join(workflow.basedir, "../../ENCORE_config.yaml")
 
 def get_sampleids_from_path_pattern(path_pattern):
     ids = [os.path.basename(val).split('_R')[0] for val in (glob.glob(path_pattern))]
@@ -11,11 +11,21 @@ def get_sampleids_from_path_pattern(path_pattern):
             new_list.append(var)
     return new_list
 
-SAMPLE_INDEX = get_sampleids_from_path_pattern(f"{config['path']['root']}/{config['folder']['data']}/*")
+# Build the root path - prefer path_root, then OUTPUT_DIR, then config value
+root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path']['root']
+
+# Handle relative paths for root_path
+if not os.path.isabs(root_path):
+    root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
+
+assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
+print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
+SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
+print(f"DEBUG: Found samples: {SAMPLE_INDEX}")
 
 rule all:
     input:
-        expand(f"{config['path']['root']}/{config['folder']['GEMs']}/{{sampleID}}", sampleID=SAMPLE_INDEX) # CarveMe
+        expand(f"{root_path}/{config['folder']['GEMs']}/{{sampleID}}", sampleID=SAMPLE_INDEX)
 
 
 
@@ -29,30 +39,27 @@ rule all:
 #############
 rule carveme:
     input:
-        bin = f"{config['path']['root']}/{config['folder']['proteinBins']}/{{sampleID}}",
-        media = f"{config['path']['root']}/{config['folder']['scripts']}/{config['scripts']['carveme']}"
+        bin = f"{root_path}/{config['folder']['proteinBins']}/{{sampleID}}"
     output:
-        directory(f"{config['path']['root']}/{config['folder']['GEMs']}/{{sampleID}}")
+        directory(f"{root_path}/{config['folder']['GEMs']}/{{sampleID}}")
+    params:
+        scratch_dir = f"{root_path}/{config['path']['scratch']}/{config['folder']['GEMs']}"
+    benchmark:
+        f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.carveme.benchmark.txt"
+    log:
+        f"{root_path}/{config['folder']['logs']}/{{sampleID}}_carveme.log"
     shell:
         """
         echo -e "$(date)\nSection starts\n Carveme \n"
-        
-        set +e
-        set +u
-        source activate metagem
-        set -u
-        set -e
 
-        # Make sure output folder exists
         idvar=$(echo $(basename {output}))
         mkdir -p {output}
-        mkdir -p {config[path][scratch]}/{config[folder][GEMs]}/${{idvar}}
-        cd {config[path][scratch]}/{config[folder][GEMs]}/${{idvar}}
+        mkdir -p {params.scratch_dir}/${{idvar}}
+        cd {params.scratch_dir}/${{idvar}}
 
-        # Copy files
-        cp {input.media} {input.bin}/* ./
-        
-        # Add Carveme to PATH
+        cp {input.bin}/* ./
+        medie_file=$(echo $(dirname {root_path})/{config[path][scripts]}/{config[DataforScripts][carveme]})
+        cp $medie_file ./
 
         for name in *.faa; do
             binID=$(echo $name | sed 's/.faa//g')
@@ -60,35 +67,31 @@ rule carveme:
             carve $name \
                 -g {config[params][carveMedia]} \
                 -v \
-                --mediadb $(basename {input.media}) \
+                --mediadb $medie_file \
                 --fbc2 \
-                -o ${{binID}}.xml \
-                2> {log}
-            echo "${{idvar}} protein bin: ${{binID}} finished constructing GEMs at $(date). ";
+                -o ${{binID}}.xml 
+        
+            echo "${{idvar}} protein bin: ${{binID}} finished constructing GEMs at $(date)";
         done
 
-	    mkdir -p {output}
+        mkdir -p {output}
         mv *.xml {output}
-        echo "Done carving GEM (Carveme) for all protein bins of Sample: ${{idvar}}. Now start to generate the statistic for GEMs.  "
-        
+        echo "Done carving GEM (Carveme) for all protein bins of Sample: ${{idvar}}. Now start to generate the statistic for GEMs."
 
-        ## GEMs statistics
         cd {output}
-        while read model;do 
-            id=$(echo $(basename $model)|sed 's/.xml//g'); 
+        while read model;do
+            id=$(echo $(basename $model)|sed 's/.xml//g');
             mets=$(less $model| grep "species metaid="|cut -d ' ' -f 8|sort|uniq|wc -l);
             rxns=$(less $model|grep -c 'reaction metaid=');
             genes=$(less $model|grep -E 'fbc:geneProduct.*fbc:id='|wc -l);
-            echo "Model: $id has $mets mets, $rxns reactions, and $genes genes ... "
+            echo "Model: $id has $mets mets$, $rxns reactions, and $genes genes ... "
             echo "$id $mets $rxns $genes" >> GEMs.stats;
         done< <(find . -name "*.xml")
-	
-	    mkdir -p {config[path][root]}/{config[folder][stats]}/${{idvar}}
-        mv GEMs.stats {config[path][root]}/{config[folder][stats]}/${{idvar}}
-        cd {config[path][root]}/{config[folder][stats]}/${{idvar}}
-        Rscript {config[path][root]}/{config[folder][scripts]}/{config[scripts][modelVis]}
-        #rm Rplots.pdf # Delete redundant pdf file
-        echo "GEMs statistic checking done at $(date). "
 
+        mkdir -p {root_path}/{config[folder][stats]}/${{idvar}}
+        mv GEMs.stats {root_path}/{config[folder][stats]}/${{idvar}}
+        cd {root_path}/{config[folder][stats]}/${{idvar}}
+        Rscript $(dirname {root_path})/{config[Rscripts][modelVis]}
+        echo "GEMs statistic checking done at $(date)."
         """
 

@@ -159,7 +159,7 @@ Reconstruct metabolic models from genomic sequences using CarveMe.
 ```bash
 conda activate metagem
 
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --gem
+bash ENCORE.sh -o ./output -c test -d Toy_Dataset --gem --keep-incomplete
 ```
 
 #### Step 11: Reconstruct Ecological GEMs (ecGEMs)
@@ -168,7 +168,7 @@ Reconstruct enzyme-constrained genome-scale metabolic models from conventional m
 ```bash
 conda activate metagem
 
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --ecgem
+bash ENCORE.sh -o ./output -c test -d Toy_Dataset --ecgem --keep-incomplete
 ```
 
 ---

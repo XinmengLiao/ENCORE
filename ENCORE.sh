@@ -11,6 +11,7 @@ SCRIPTS_DIR="Scripts"
 CORES=1
 DRY_RUN=false
 QUIET=false
+KEEP_INCOMPLETE=false
 declare -a MODULES=()
 
 # ================================
@@ -164,6 +165,10 @@ run_snakemake() {
         snakemake_opts="$snakemake_opts --dry-run"
     fi
     
+    if [[ "$KEEP_INCOMPLETE" == true ]]; then
+        snakemake_opts="$snakemake_opts --keep-incomplete"
+    fi
+    
     eval "snakemake -s \"${SCRIPTS_DIR}/Main_Functions/${smk_file}\" $snakemake_opts"
     
     if [[ $? -eq 0 ]]; then
@@ -250,7 +255,7 @@ OPTIONS:
   -s, --scripts-dir <dir>     Scripts directory (default: Scripts)
   
   -n, --dry-run               Perform a dry run without executing
- 
+  -k, --keep-incomplete       Keep incomplete output files (don't delete intermediate files)
   -l, --list                  List all available modules
   -h, --help                  Show this help message
 
@@ -266,6 +271,9 @@ EXAMPLES:
 
   # Dry run to see what would be executed
   bash $0 -o ./output -c sample1 --dry-run --assembly
+
+  # Keep intermediate files if job fails
+  bash $0 -o ./output -c sample1 -d my_data --assembly --keep-incomplete
 
   # List all available modules
   bash $0 --list
@@ -334,6 +342,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n|--dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        -k|--keep-incomplete)
+            KEEP_INCOMPLETE=true
             shift
             ;;
         -l|--list)
@@ -406,6 +418,7 @@ log_info "Cohort: $COHORT"
 log_info "Data folder: $DATA_FOLDER"
 log_info "CPU cores: $CORES"
 [[ "$DRY_RUN" == true ]] && log_warning "DRY RUN MODE - No modules will be executed"
+[[ "$KEEP_INCOMPLETE" == true ]] && log_warning "KEEP INCOMPLETE MODE - Intermediate files will be preserved"
 echo ""
 
 if ! run_modules; then
