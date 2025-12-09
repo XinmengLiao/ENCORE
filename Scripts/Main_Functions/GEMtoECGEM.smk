@@ -1,7 +1,7 @@
-configfile: "ENCORE_config.yaml"
-
 import os
 import glob
+
+configfile: os.path.join(workflow.basedir, "../../ENCORE_config.yaml")
 
 def get_sampleids_from_path_pattern(path_pattern):
     ids = [os.path.basename(val).split('_R')[0] for val in (glob.glob(path_pattern))]
@@ -11,11 +11,21 @@ def get_sampleids_from_path_pattern(path_pattern):
             new_list.append(var)
     return new_list
 
-SAMPLE_INDEX = get_sampleids_from_path_pattern(f"{config['path']['root']}/{config['folder']['data']}/*")
+# Build the root path - prefer path_root, then OUTPUT_DIR, then config value
+root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path']['root']
+
+# Handle relative paths for root_path
+if not os.path.isabs(root_path):
+    root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
+
+assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
+print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
+SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
+print(f"DEBUG: Found samples: {SAMPLE_INDEX}")
 
 rule all:
     input:
-        expand(f"{config['path']['root']}/{config['folder']['ecGEMs']}/{{sampleID}}", sampleID=SAMPLE_INDEX)
+        expand(f"{root_path}/{config['folder']['ecGEMs']}/{{sampleID}}", sampleID=SAMPLE_INDEX)
 
 
 ####---------------------####
@@ -24,24 +34,38 @@ rule all:
 
 rule ecGEM:
     input:
-        f"{config['path']['root']}/{config['folder']['GEMs']}/{{sampleID}}"
+        f"{root_path}/{config['folder']['GEMs']}/{{sampleID}}"
     output:
-        f"{config['path']['root']}/{config['folder']['ecGEMs']}/{{sampleID}}"
+        directory(f"{root_path}/{config['folder']['ecGEMs']}/{{sampleID}}")
+    params:
+        scratch_dir = f"{root_path}/{config['path']['scratch']}/{config['folder']['ecGEMs']}",
+        uniprotid_file = os.path.join(os.path.dirname(workflow.basedir), config['DataforScripts'].get('UniprotID', 'UniprotID.txt')),
+        kegg_file = os.path.join(os.path.dirname(workflow.basedir), config['DataforScripts'].get('kegg', 'kegglist.txt')),
+        taxonomy_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['Rscripts']['taxonomy']),
+        proteinbins_path = f"{root_path}/{config['folder']['proteinBins']}",
+        gems_path = f"{root_path}/{config['folder']['GEMs']}",
+        classification_path = f"{root_path}/{config['folder']['classification']}",
+        makeecgem_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['MatlabScripts']['makeECGEM']),
+        extractmet_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['MatlabScripts']['extractMet']),
+        adaptertemplate_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['MatlabScripts']['adaptertemplate'])
+    benchmark:
+        f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.ecgem.benchmark.txt"
+    log:
+        f"{root_path}/{config['folder']['logs']}/{{sampleID}}_ecgem.log"
     shell:
         """
-        # Create the scratch folder
+        echo -e "$(date)\\nSection starts\\necGEM\\n"
+
         idvar=$(basename {output})
-        echo $idvar
         mkdir -p {output}
         cd {output}
 
         # Extract taxonomic information
-        cp {config[path][root]}/{config[folder][scripts]}/{config[scripts][UniprotID]} ./
-        cp {config[path][root]}/{config[folder][gtdbtk]}/$idvar/${{idvar}}_gtdbtk_summary.tsv ./
-        cp {config[path][root]}/{config[folder][scripts]}/{config[scripts][kegg]} ./
+        cp {params.uniprotid_file} ./
+        cp {params.classification_path}/${{idvar}}/${{idvar}}_gtdbtk_summary.tsv ./
+        cp {params.kegg_file} ./
         
-        #module load cray-R
-        Rscript {config[path][root]}/{config[folder][scripts]}/{config[scripts][taxonomy]}
+        Rscript {params.taxonomy_script}
         
         # Only copy the files with existing taxonomic information
         awk 'NR>1 {{print $1}}' taxonomy.txt | while read bin; do
@@ -51,30 +75,29 @@ rule ecGEM:
                 mkdir -p $bin/$folder;
             done
 
-            cp $(dirname $(dirname {output}))/GEMs/$idvar/$bin.xml $bin/models/
-            cp {config[path][root]}/{config[folder][proteinBins]}/$idvar/$bin.faa $bin/
+            cp {params.gems_path}/${{idvar}}/$bin.xml $bin/models/
+            cp {params.proteinbins_path}/${{idvar}}/$bin.faa $bin/
             awk '/>/ {{name = $0; gsub(/>/,"",name); gsub(" #.*","",name); gsub (/[-.]/,"_",name) ; next}} {{print name"\t"$0}} ' $bin/$bin.faa > $bin/$bin.faa.txt;
 
             # copy the matlab files into each bin folder
-            cp {config[path][root]}/{config[folder][scripts]}/{config[scripts][makeECGEM]} ./
-            cp {config[path][root]}/{config[folder][scripts]}/{config[scripts][extractMet]} ./
-            cp {config[path][root]}/{config[folder][scripts]}/{config[scripts][adaptertemplate]} $bin/
-            
+            cp {params.makeecgem_script} ./
+            cp {params.extractmet_script} ./
+            cp {params.adaptertemplate_script} $bin/
 
             #manage the adapter template file
             AdapterFileName=$(echo "$bin" | sed 's/\.//g')ecGECKOAdapter
             mv $bin/adapterTemplate.m $bin/$AdapterFileName.m
 
-            protID=$(awk -F '\t' -v genome="$bin" '$0 ~ genome {{print $2}}' taxonomy.txt)
+            protID=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $2}}' taxonomy.txt)
             echo "Uniprot ID:"
             echo $protID
-            ncbiID=$(awk -F '\t' -v genome="$bin" '$0 ~ genome {{print $3}}' taxonomy.txt)
+            ncbiID=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $3}}' taxonomy.txt)
             echo "NCBI ID:"
             echo $ncbiID
-            species=$(awk -F '\t' -v genome="$bin" '$0 ~ genome {{print $6}}' taxonomy.txt)
+            species=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $6}}' taxonomy.txt)
             echo "Species: "
             echo $species
-            keggorg=$(awk -F '\t' -v genome="$bin" '$0 ~ genome {{print $4}}' taxonomy.txt)
+            keggorg=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $4}}' taxonomy.txt)
             echo "KEGG org: "
             echo $keggorg
 
@@ -108,6 +131,7 @@ rule ecGEM:
         cd {output}
         ecGEMpath=$(echo $(dirname $(pwd))/$idvar)
         GEMpath=$(echo $(dirname $(dirname $ecGEMpath))/GEMs/$idvar)
+        sensitivityValue={config[params][FVAsensitivity]}
         
         echo $GEMpath
         echo $ecGEMpath
@@ -120,36 +144,13 @@ rule ecGEM:
         sed -i.bak "
             /GEMpath =/s|GEMpath =.*|GEMpath = '${{GEMpath}}';|;
             /ecGEMpath =/s|ecGEMpath =.*|ecGEMpath = '${{ecGEMpath}}';|;
+            /sensitivity =/s|sensitivity =.*|sensitivity = ${{sensitivityValue}};|;
         " meta-gecko.m
 
         rm meta-gecko.m.bak
         rm meta-gecko-extractMet.m.bak
 
-        #/Applications/MATLAB_R2024b.app/toolbox/matlab/general/matlab.m -nodisplay -nosplash -nodesktop -logfile matlab.log/$idvar.txt < meta-gecko.m
+        matlab -nodisplay -nosplash -nodesktop -logfile matlab.log/$idvar.txt < meta-gecko.m
 
-        # # DLKcat needs to run locally
-
-        # for bin in bin.1.p/; do
-        #     dlkcat_result_nokcat = $(echo $bin/data/DLKcat.tsv)
-        #     dlkcat_results_kcat = $(echo $bin/data/DLKcatOutput.tsv)
-        #     dlkcat_py = {config[path][root]}/{config[folder][dlkcat]}/{config[scripts][dlkcat]}
-        #     cd $(dirname $dlkcat_py)
-
-        #     python3.10 $dlkcat_py $dlkcat_result_nokcat $dlkcat_results_kcat
-
-        #     if [ -f $dlkcat_results_kcat ]; then
-        #         rm $dlkcat_result_nokcat
-        #         mv $dlkcat_results_kcat $dlkcat_result_nokcat
-        #         echo 'DLKcat prediction completed'
-        #     else   
-        #         echo 'DLKcat encountered an error or it did not create any output file.'
-        #     fi
-        # done
-
-        # /Applications/MATLAB_R2024b.app/toolbox/matlab/general/matlab.m -nodisplay -nosplash -nodesktop -logfile matlab_log2.txt < meta-gecko-part2.m
- 
-
-        echo -e "ecGECKO models have been generated for $idvar at $(date)\nSection ends\n"
-
-
+        echo -e "ecGECKO models have been generated for $idvar at $(date)\\nSection ends\\n"
         """

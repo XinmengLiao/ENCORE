@@ -2,7 +2,7 @@ path:
     root: ENCORE/
     scratch: scratch
     scripts: Scripts
-    gtdbtk: [path/to/gtdbtk] 
+    gtdbtk: [path/to/gtdbtk]
 folder:
     logs: logs
     benchmarks: benchmarks
@@ -36,10 +36,9 @@ PythonScripts:
     binFilter: Scripts/PythonScripts/binFilter.py
     adjust_coverage: Scripts/PythonScripts/adjust_coverage.py
 MatlabScripts:
-    createECGEM: Scripts/MatlabScripts/CreateECModel.m
-    makeECGEM: Scripts/MatlabScripts/meta-gecko.m
-    adaptertemplate: Scripts/MatlabScripts/adapterTemplate.m
-    extractMet: Scripts/MatlabScripts/meta-gecko-extractMet.m
+    createECGEM: Scripts/MATLABScripts/CreateECModel.m
+    makeECGEM: Scripts/MATLABScripts/meta-gecko.m
+    adaptertemplate: Scripts/MATLABScripts/adapterTemplate.m
 Rscripts:
     assemblyVis: Scripts/RScripts/assemblyVis.R
     binningVis: Scripts/RScripts/binningVis.R
@@ -89,6 +88,7 @@ params:
     smetanaSolver: CPLEX
     roaryI: 90
     roaryCD: 90
+    FVAsensitivity: 0.95
 envs:
     metagem: ENCORE/envs/metagem
     metawrap: ENCORE/envs/metawrap

@@ -1,13 +1,4 @@
 % Add GECKO and RAVEN path into MatLab path
-%addpath(genpath('/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/GECKO'));
-%addpath(genpath('/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/RAVEN'));
-
-% Check installation
-%GECKOInstaller.install
-% create a GECKO project, with the default folders setting
-%startGECKOproject(filename, currentPath)
-% will create the folders in current path,  need to go inside and change
-% the Adapter file 
 
 %% Stage 1 Expansion from the traditional GEMs to ecGEMs
 % STEP 1 Set modelAdapter path # store all files in ecModel_files 
@@ -17,7 +8,6 @@ GEMpath = '';
 cd(GEMpath)
 GEMfiles = dir(fullfile(GEMpath, '*.xml'));
 currentPath = pwd
-dlkcat_scriptDir = '/Users/xinmengliao/Documents/Project/20231127_GEMs/dlkcat';
 minus_growth = table([], [], [], 'VariableNames', {'sample', 'bin', 'growth'});
 
 for i = 1:length(GEMfiles)
@@ -176,24 +166,7 @@ for i = 1:length(GEMfiles)
 % STEP 6 Predict kcat values with DLKcat
     % Running DLKcat in Docker (very slow) or locally by python3.12 (miniconda3)
     writeDLKcatInput(ecModel,[],[],[],[],true);
-    % runDLKcat();
-
-    setenv('PATH', strcat('/Users/xinmengliao/miniconda3/bin:', getenv('PATH')));
-    dlkcat_result_nokcat = fullfile(ecGEMpath, bin, 'data','DLKcat.tsv');
-    dlkcat_results_kcat = fullfile(ecGEMpath, bin, 'data','DLKcatOutput.tsv');
-    dlkcat_py = fullfile(dlkcat_scriptDir, 'DLKcat.py');
-    cd(dlkcat_scriptDir)
-    command = sprintf('python3 "%s" "%s" "%s"', dlkcat_py, dlkcat_result_nokcat, dlkcat_results_kcat);
-    status = system(command);
-    if status == 0 && exist(fullfile(params.path,'data/DLKcatOutput.tsv'))
-        delete(fullfile(params.path,'/data/DLKcat.tsv'));
-        movefile(fullfile(params.path,'/data/DLKcatOutput.tsv'), fullfile(params.path,'/data/DLKcat.tsv'));
-        disp('DLKcat prediction completed.');
-    else    
-        error('DLKcat encountered an error or it did not create any output file.')
-    end
-
-    cd(fullfile(ecGEMpath,bin))
+    runDLKcat();
 
 % STEP 7 Load DLKcat output
     kcatList_DLKcat = readDLKcatOutput(ecModel);
@@ -254,9 +227,7 @@ for i = 1:length(GEMfiles)
     writeYAMLmodel(ecModel,  model_tmp)
 
 % STEP 16 Run FVA for exchange reactions only 
-    % Add gurobi solver into the working path
-    addpath(genpath('/Library/gurobi1201/macos_universal2/matlab'));
-
+    % Recommend to use Gurobi solver from RAVEN for FVA 
     % set RAVEN solver as gurobi
     setRavenSolver('gurobi')
 
@@ -266,6 +237,9 @@ for i = 1:length(GEMfiles)
     % load ecGEM
     ecmodel_path = strcat(model_tmp)
     ecModel = readYAMLmodel(ecmodel_path)
+
+    % Store the ecModel with optimal growth rate == 0 
+    minus_growth = table([], [], [], 'VariableNames', {'sample', 'bin', 'growth'});
 
     % check the reactions in ecModel ensure exchange reations are completed 
     [ecModel.rxns, constructEquations(ecModel)];
@@ -284,17 +258,17 @@ for i = 1:length(GEMfiles)
     equations= cell(n_exc, 1);
     
     % FVA
-    sensitivity = 0.95;
+    sensitivity = ;
     %ecModel = setParam(ecModel,'ub',ecModel.rxns(ecModel.c>0),1);
     sol_opt = solveLP(ecModel);
     sol0 = solveLP(ecModel);
     objFlux = sol_opt.x(ecModel.c>0)
+    parts = strsplit(ecGEMpath, '/'); 
+    sample = parts{end};
+    sample = string(sample);
+    bin = string(bin);
 
     if objFlux <= 0
-        parts = strsplit(ecGEMpath, '/'); 
-        sample = parts{end};  
-        sample = string(sample);
-        bin = string(bin);
         tmp = table(sample, bin, objFlux, 'VariableNames', {'sample', 'bin', 'growth'});            
         minus_growth = [minus_growth; tmp]
     else
@@ -304,7 +278,7 @@ for i = 1:length(GEMfiles)
         [found, idx] = ismember(exchangeRxns, bioModel.rxns);
         
         for i = 1:length(exchangeRxns)
-            i;
+            i
             iRxn = bioModel.rxns(idx(i));
             iModel = setParam(bioModel,'obj',iRxn,1);
             iSol = solveLP(iModel);
@@ -313,7 +287,12 @@ for i = 1:length(GEMfiles)
                 UB_exc(i) = iSol.x(ismember(iModel.rxns, iRxn));
             catch
                 UB_exc(i) = sol0.x(logical(iModel.c));
-                tmp = table(sample, bin, "No UB_exc", 'VariableNames', {'sample', 'bin', 'growth'}); 
+                iRxn = string(iRxn)
+                reaction_tmp = strcat(iRxn, " No UB_exc");  
+                reaction_tmp = string(reaction_tmp); 
+                sample = string(sample);
+                bin = string(bin);
+                tmp = table(sample(:), bin(:), reaction_tmp(:), 'VariableNames', {'sample','bin','growth'});
                 minus_growth = [minus_growth; tmp];
             end
             
@@ -323,7 +302,12 @@ for i = 1:length(GEMfiles)
                 LB_exc(i) = iSol.x(ismember(iModel.rxns, iRxn));
             catch
                 LB_exc(i) = sol0.x(logical(iModel.c));
-                tmp = table(sample, bin, "No LB_exc", 'VariableNames', {'sample', 'bin', 'growth'}); 
+                iRxn = string(iRxn)
+                reaction_tmp = strcat(iRxn, " No UB_exc");  
+                reaction_tmp = string(reaction_tmp); 
+                sample = string(sample);
+                bin = string(bin);
+                tmp = table(sample(:), bin(:), reaction_tmp(:), 'VariableNames', {'sample','bin','growth'});
                 minus_growth = [minus_growth; tmp];
             end
            
@@ -331,12 +315,11 @@ for i = 1:length(GEMfiles)
         end
 
         exchange_results = table(exchangeRxns, equations, LB_exc, UB_exc);
-        fva_filename = strcat(binID, 'FVA.txt')
-        outputfile = fullfile(ecGEMpath, bin, 'output',finalid)
+	    fva_filename = strcat(sample, ".",binID, 'FVA.txt')
+        outputfile = fullfile(ecGEMpath, bin, 'output', fva_filename)
         writetable(exchange_results, outputfile,'Delimiter', '\t', 'QuoteStrings', false, 'FileType', 'text');
     end  
 end
 
 minus_file = fullfile(ecGEMpath, 'minus_growth.txt')
 writetable(minus_growth, minus_file,'Delimiter', '\t', 'QuoteStrings', false, 'FileType', 'text');
-
