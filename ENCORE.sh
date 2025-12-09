@@ -16,9 +16,9 @@ declare -a MODULES=()
 # ================================
 # Module definitions (using simple arrays for zsh compatibility)
 # ================================
-METAGENOME_MODULES="quality trim assembly crossmap maxbin concoct metabat refinement reassembly abundance taxonomy"
-METABOLIC_MODULES="extraction gem ecgem"
-REPORTER_MODULES="network reporter"
+PREPROCESSING_MODULES="quality trim assembly"
+DOWNSTREAM_MODULES="crossmap maxbin concoct metabat refinement reassembly abundance taxonomy extraction gem ecgem"
+ALL_MODULES="quality trim assembly crossmap maxbin concoct metabat refinement reassembly abundance taxonomy extraction gem ecgem network reporter"
 
 # Function to get snakemake file for a module
 get_smk_file() {
@@ -26,6 +26,7 @@ get_smk_file() {
         quality) echo "fastqc.smk" ;;
         trim) echo "fastp.smk" ;;
         assembly) echo "megahit.smk" ;;
+        preprocessing) echo "preprocessing.smk" ;;
         crossmap) echo "crossmapping.smk" ;;
         maxbin) echo "maxbin.smk" ;;
         concoct) echo "concoct.smk" ;;
@@ -37,6 +38,7 @@ get_smk_file() {
         extraction) echo "extraction.smk" ;;
         gem) echo "carveme.smk" ;;
         ecgem) echo "GEMtoECGEM.smk" ;;
+        downstream) echo "downstream.smk" ;;
         network) echo "CoGEMNetwork.smk" ;;
         reporter) echo "ReporterMetabolite.smk" ;;
         *) return 1 ;;
@@ -49,6 +51,7 @@ get_module_desc() {
         quality) echo "Read quality check" ;;
         trim) echo "Read trimming" ;;
         assembly) echo "Contig assembly" ;;
+        preprocessing) echo "Complete preprocessing (quality, trim, assembly)" ;;
         crossmap) echo "Prepare depth files for binning" ;;
         maxbin) echo "Binning with MaxBin2" ;;
         concoct) echo "Binning with CONCOCT" ;;
@@ -60,6 +63,7 @@ get_module_desc() {
         extraction) echo "Extract genomic and proteomic sequences" ;;
         gem) echo "Reconstruction of GEMs" ;;
         ecgem) echo "Reconstruction of ecGEMs" ;;
+        downstream) echo "Complete downstream analysis (binning to ecGEM)" ;;
         network) echo "Construct microbial community ecGEMs network" ;;
         reporter) echo "Identify reporter metabolites" ;;
         *) return 1 ;;
@@ -118,7 +122,7 @@ validate_env() {
 validate_module() {
     local module=$1
     # Check if module is in any of the module lists
-    if [[ "$METAGENOME_MODULES $METABOLIC_MODULES $REPORTER_MODULES" == *"$module"* ]]; then
+    if [[ "$ALL_MODULES" == *"$module"* ]]; then
         return 0
     fi
     return 1
@@ -127,18 +131,8 @@ validate_module() {
 list_modules() {
     log_info "Available modules:"
     echo ""
-    echo -e "Metagenome Analysis:"
-    for mod in $METAGENOME_MODULES; do
-        printf "  %-15s %s\n" "$mod" "$(get_module_desc $mod)"
-    done
-    echo ""
-    echo -e "Metabolic Modelling:"
-    for mod in $METABOLIC_MODULES; do
-        printf "  %-15s %s\n" "$mod" "$(get_module_desc $mod)"
-    done
-    echo ""
-    echo -e "Reporter Metabolites:"
-    for mod in $REPORTER_MODULES; do
+    echo -e "All available modules:"
+    for mod in $ALL_MODULES; do
         printf "  %-15s %s\n" "$mod" "$(get_module_desc $mod)"
     done
 }
@@ -217,6 +211,7 @@ run_modules() {
 quality()       { run_snakemake "quality"; }
 trim()          { run_snakemake "trim"; }
 assembly()      { run_snakemake "assembly"; }
+preprocessing() { run_snakemake "preprocessing"; }
 crossmap()      { run_snakemake "crossmap"; }
 maxbin()        { run_snakemake "maxbin"; }
 concoct()       { run_snakemake "concoct"; }
@@ -230,6 +225,7 @@ extraction()    { run_snakemake "extraction"; }
 gem()           { run_snakemake "gem"; }
 ecgem()         { run_snakemake "ecgem"; }
 
+downstream()    { run_snakemake "downstream"; }
 network()       { run_snakemake "network"; }
 reporter()      { run_snakemake "reporter"; }
 
@@ -275,14 +271,15 @@ EXAMPLES:
   bash $0 --list
 
 WORKFLOW GROUPS:
-  --metagenome    Run all metagenome analysis modules (quality, trim, assembly, etc.)
-  --metabolic     Run metabolic modelling modules (extraction, gem, ecgem)
-  --reporter      Run reporter metabolite modules (network, reporter)
+  --preprocessing Run preprocessing modules (quality, trim, assembly)
+  --downstream    Run downstream analysis modules (crossmap through ecgem)
+  --all           Run complete pipeline (preprocessing → crossmap → downstream → network → reporter)
 
 INDIVIDUAL MODULES (Metagenome):
   --quality       Read quality check
   --trim          Read trimming
   --assembly      Contig assembly
+  --preprocessing Complete preprocessing (quality, trim, assembly)
   --crossmap      Prepare depth files for binning
   --maxbin        Binning with MaxBin2
   --concoct       Binning with CONCOCT
@@ -296,6 +293,7 @@ INDIVIDUAL MODULES (Metabolic):
   --extract       Extract genomic and proteomic sequences
   --gem           Reconstruction of GEMs
   --ecgem         Reconstruction of ecGEMs
+  --downstream    Complete downstream analysis (binning to ecGEM)
 
 INDIVIDUAL MODULES (Reporter):
   --network       Construct microbial community ecGEMs network
@@ -346,8 +344,20 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 0
             ;;
+        --preprocessing)
+            for mod in $PREPROCESSING_MODULES; do
+                MODULES+=("$mod")
+            done
+            shift
+            ;;
         --metagenome)
             for mod in $METAGENOME_MODULES; do
+                MODULES+=("$mod")
+            done
+            shift
+            ;;
+        --downstream)
+            for mod in $DOWNSTREAM_MODULES; do
                 MODULES+=("$mod")
             done
             shift
@@ -364,7 +374,13 @@ while [[ $# -gt 0 ]]; do
             done
             shift
             ;;
-        --quality|--trim|--assembly|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extract|--gem|--ecgem|--network|--reporter)
+        --all)
+            for mod in $ALL_MODULES; do
+                MODULES+=("$mod")
+            done
+            shift
+            ;;
+        --quality|--trim|--assembly|--preprocessing|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extract|--gem|--ecgem|--downstream|--network|--reporter)
             # Remove leading dashes
             module="${1#--}"
             MODULES+=("$module")

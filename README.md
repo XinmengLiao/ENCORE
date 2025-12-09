@@ -92,55 +92,66 @@ chmod +x ENCORE.sh
 
 # Usage
 ```bash
-bash ENCORE.sh [COMMAND] [cohort_prefix] [script_dir] [threads]
+bash ENCORE.sh [OPTIONS]
 ```
 
 ### ✨ Required arguments
-- `-o, --output-directory` : Output directory for results  
+- `-o, --output-dir` : Output directory for results  
+- `-c, --cohort` : Cohort/sample prefix
+- `-d, --data-folder` : Input data folder containing raw sequencing reads (default: `Toy_Dataset`)
 
 ### ✨ Optional arguments
 - `-s, --scripts-dir` : Directory containing all scripts (default: `Scripts/`)  
-- `-t, --thread` : Number of threads to use (default: 1)
-- `-c, --cohort` : Cohort/sample prefix
-- `--example`: Download example sequencing data for tests and showcases
+- `-t, --threads` : Number of CPU cores to use (default: 1)
+- `--dry-run` : Perform a dry run without executing workflows
+- `-q, --quiet` : Run in quiet mode with minimal output
 - `-h, --help` : Show help message  
 
-### ✨ Available functions
+### ✨ Available modules
+
 #### Full pipeline
-- `all` : Run the entire pipeline  
+- `--metagenome` : Run all metagenome analysis modules (quality, trim, assembly, crossmap, maxbin, concoct, metabat, refinement, reassembly, abundance, taxonomy)
+- `--metabolic` : Run all metabolic modeling modules (extraction, gem, ecgem)
+- `--reporter` : Run reporter metabolite analysis (network, reporter)
 
-#### Metagenome
-- `quality` : Read quality check (FastQC)  
-- `trim` : Read trimming (fastp)  
-- `assembly` : Contig assembly (MEGAHIT)  
-- `crossmap` : Depth file preparation for binning  
-- `maxbin` : Binning with MaxBin2  
-- `concoct` : Binning with CONCOCT  
-- `metabat` : Binning with MetaBat2  
-- `refinement` : Bin refinement  
-- `reassembly` : Bin reassembly  
-- `abundance` : Abundance calculation  
-- `taxonomy` : Taxonomic classification  
-- `daa` : Differential Abundance Analysis
+#### Metagenome Quality Control & Assembly
+- `--quality` : FastQC - Read quality check  
+- `--trim` : fastp - Read trimming and quality filtering
+- `--assembly` : MEGAHIT - Contig assembly from reads
 
-#### Genome-scale Metabolic Modelling
-- `extraction` : Extract genomic & proteomic sequences  
-- `gem` : GEM reconstruction  
-- `ecgem` : ecGEM reconstruction  
+#### Metagenome Coverage & Binning
+- `--crossmap` : Prepare depth files for binning using BWA mapping and JGI scripts
+- `--maxbin` : MaxBin2 - Binning algorithm for genome recovery
+- `--concoct` : CONCOCT - Co-assembly clustering algorithm for binning
+- `--metabat` : MetaBat2 - Metagenome binning tool
 
-#### Reporter Metabolite
-- `network` : Construct microbial community ecGEMs network  
-- `reporter` : Identify reporter metabolites  
+#### Genome & Abundance Analysis
+- `--refinement` : metaWRAP - Refine bins from multiple binning methods
+- `--reassembly` : metaWRAP - Reassemble refined bins with original reads
+- `--extraction` : Extract genomic (DNA) and proteomic (protein) sequences from bins
+- `--abundance` : Calculate bin abundance fractions from read mapping
+
+#### Taxonomic Classification & Modeling
+- `--taxonomy` : GTDB-Tk - Taxonomic classification of MAGs to species level
+- `--gem` : CarveMe - Reconstruction of genome-scale metabolic models (GEMs)
+- `--ecgem` : GECKO 3.0 - Reconstruction of enzyme-constrained GEMs (ecGEMs)
+
+#### Community Metabolic Analysis
+- `--network` : Construct microbial community ecGEM metabolic networks
+- `--reporter` : Identify reporter metabolites in community models
 
 ### ✨ Examples
 
 ```bash
-# Run the full pipeline with 8 threads per job
-bash ENCORE.sh all -o results/ -t 8
+# Run the single module with 8 jobs at the same time
+bash ENCORE.sh -o ./results -c test -d my_reads -t 8 --metagenome
 
-# Run assemly with 4 threads per job
-bash ENCORE.sh assembly -o results/ -t 4
+# Run multiple modules
+bash ENCORE.sh -o ./results -c test -d my_reads -t 4 --quality --trim
 
-# Run CONCOCT binning with 12 threads per job
-bash ENCORE.sh concoct -o results/ -t 12
+# Perform a dry run to check the workflow before execution
+bash ENCORE.sh -o ./results -c test -d my_reads --dry-run --metagenome
+
+# Run the complete analysis pipeline with all modules
+bash ENCORE.sh -o ./results -c test -d my_reads -t 16 --metagenome --metabolic --reporter
 ```
