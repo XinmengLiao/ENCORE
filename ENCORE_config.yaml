@@ -55,7 +55,7 @@ cores:
     metabat: 16
     maxbin: 16
     refine: 16
-    reassemble: 16
+    reassemble: 64
     classify: 16
     gtdbtk: 16
     abundance: 16
