@@ -24,13 +24,13 @@ folder:
     stats: stats
     scripts: Scripts
 DataforScripts:
-    assemblyVis: assemblyVis.R
-    binningVis: binningVis.R
-    modelVis: modelVis.R
-    compositionVis: compositionVis.R
-    carveme: media_db.tsv
-    UniprotID: UniprotID.txt
-    kegg: kegglist.txt
+    assemblyVis: DataforScripts/assemblyVis.R
+    binningVis: DataforScripts/binningVis.R
+    modelVis: DataforScripts/modelVis.R
+    compositionVis: DataforScripts/compositionVis.R
+    carveme: DataforScripts/media_db.tsv
+    UniprotID: DataforScripts/UniprotID.txt
+    kegg: DataforScripts/kegglist.txt
 PythonScripts:
     kallisto2concoct: Scripts/PythonScripts/kallisto2concoct.py
     binFilter: Scripts/PythonScripts/binFilter.py

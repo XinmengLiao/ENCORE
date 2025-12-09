@@ -221,7 +221,7 @@ reassembly()    { run_snakemake "reassembly"; }
 abundance()     { run_snakemake "abundance"; }
 taxonomy()      { run_snakemake "taxonomy"; }
 
-extraction()    { run_snakemake "extraction"; }
+extract()       { run_snakemake "extract"; }
 gem()           { run_snakemake "gem"; }
 ecgem()         { run_snakemake "ecgem"; }
 
@@ -350,20 +350,8 @@ while [[ $# -gt 0 ]]; do
             done
             shift
             ;;
-        --metagenome)
-            for mod in $METAGENOME_MODULES; do
-                MODULES+=("$mod")
-            done
-            shift
-            ;;
         --downstream)
             for mod in $DOWNSTREAM_MODULES; do
-                MODULES+=("$mod")
-            done
-            shift
-            ;;
-        --metabolic)
-            for mod in $METABOLIC_MODULES; do
                 MODULES+=("$mod")
             done
             shift
@@ -383,6 +371,10 @@ while [[ $# -gt 0 ]]; do
         --quality|--trim|--assembly|--preprocessing|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extract|--gem|--ecgem|--downstream|--network|--reporter)
             # Remove leading dashes
             module="${1#--}"
+            # Handle alias: --extract -> extraction
+            if [[ "$module" == "extract" ]]; then
+                module="extraction"
+            fi
             MODULES+=("$module")
             shift
             ;;

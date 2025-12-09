@@ -1,7 +1,7 @@
-configfile: "ENCORE_config.yaml"
-
 import os
 import glob
+
+configfile: os.path.join(workflow.basedir, "../../ENCORE_config.yaml")
 
 def get_sampleids_from_path_pattern(path_pattern):
     ids = [os.path.basename(val).split('_R')[0] for val in (glob.glob(path_pattern))]
@@ -11,47 +11,44 @@ def get_sampleids_from_path_pattern(path_pattern):
             new_list.append(var)
     return new_list
 
-SAMPLE_INDEX = get_sampleids_from_path_pattern(f"{config['path']['root']}/{config['folder']['data']}/*") 
+# Build the root path - prefer path_root, then OUTPUT_DIR, then config value
+root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path']['root']
+
+# Handle relative paths for root_path
+if not os.path.isabs(root_path):
+    root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
+
+assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
+print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
+SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
+print(f"DEBUG: Found samples: {SAMPLE_INDEX}") 
 
 rule all:
-	input:
-        	expand(f"{config['path']['root']}/{config['folder']['abundance']}/{{sampleID}}", sampleID=SAMPLE_INDEX)
-
-
+    input:
+        expand(f"{root_path}/{config['folder']['abundance']}/{{sampleID}}", sampleID=SAMPLE_INDEX)
 
 
 rule abundance:
     input:
-        bins = f"{config['path']['root']}/{config['folder']['reassembled']}/{{sampleID}}",
-        R1 = f"{config['path']['root']}/{config['folder']['qfiltered']}/{{sampleID}}/{{sampleID}}_R1_qfiltered.fastq.gz",
-        R2 = f"{config['path']['root']}/{config['folder']['qfiltered']}/{{sampleID}}/{{sampleID}}_R2_qfiltered.fastq.gz"
+        bins = f"{root_path}/{config['folder']['reassembled']}/{{sampleID}}",
+        R1 = f"{root_path}/{config['folder']['qfiltered']}/{{sampleID}}/{{sampleID}}_R1_qfiltered.fastq.gz",
+        R2 = f"{root_path}/{config['folder']['qfiltered']}/{{sampleID}}/{{sampleID}}_R2_qfiltered.fastq.gz"
     output:
-        directory(f"{config['path']['root']}/{config['folder']['abundance']}/{{sampleID}}")
-    message: 
-		"""
-        Calculate bin abundance fraction using the following:
-
-        binAbundanceFraction = ( X / Y / Z) * 1000000
-
-        X = # of reads mapped to bin_i from sample_k
-        Y = length of bin_i (bp)
-        Z = # of reads mapped to all bins in sample_k
-
-        Note: 1000000 scaling factor converts length in bp to Mbp
-              Rule slightly modified for european datasets where input bins are in dna_bins_organized
-              instead of metaWRAP reassembly output folder 
-
-        
-        Required tools: bwa, samtools
+        directory(f"{root_path}/{config['folder']['abundance']}/{{sampleID}}")
+    params:
+        scratch_dir = f"{root_path}/{config['path']['scratch']}"
+    benchmark:
+        f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.abundance.benchmark.txt"
+    log:
+        f"{root_path}/{config['folder']['logs']}/{{sampleID}}_abundance.log"
+    shell:
         """
-	shell:
-		"""
         mkdir -p {output}
         idvar=$(basename {input.bins})
-        mkdir -p {config[path][scratch]}/${{idvar}}
+        mkdir -p {params.scratch_dir}/abundance/${{idvar}}
 
         echo -e "\nCopying quality filtered paired end reads and generated MAGs to SCRATCHDIR ... "
-        cd {config[path][scratch]}/${{idvar}}
+        cd {params.scratch_dir}/abundance/${{idvar}}
         cp {input.R1} {input.R2} {input.bins}/${{idvar}}/reassembled_bins/* ./
 
         echo -e "\nConcatenating all bins into one FASTA file ... "
@@ -76,7 +73,7 @@ rule abundance:
         echo -e "\nCopying sample_map.stats file to root/abundance/sample for bin concatenation and deleting temporary FASTA file ... "
         cp map.stats {output}/$(basename {input.bins})_map.stats
         rm $(basename {input.bins}).fa
-        
+
         echo -e "\nRepeat procedure for each bin ... "
         for bin in *.fa;do
 
@@ -93,57 +90,62 @@ rule abundance:
                 ../$(basename {input.R1}) ../$(basename {input.R2}) > $(echo "$bin"|sed "s/.fa/.sam/")
 
             echo -e "\nConverting SAM to BAM with samtools view at $(date)... "
-            samtools view -@ {config[cores][abundance]} -Sb $(echo "$bin"|sed "s/.fa/.sam/") > $(echo "$bin"|sed "s/.fa/.bam/")
+            bin_name=$(echo "$bin"|sed "s/.fa/.bam/")
+            samtools view -@ {config[cores][abundance]} -Sb $(echo "$bin"|sed "s/.fa/.sam/") > "$bin_name"
 
             echo -e "\nSorting BAM file with samtools sort $(date)... "
-            samtools sort -@ {config[cores][abundance]} -o $(echo "$bin"|sed "s/.fa/.sort.bam/") $(echo "$bin"|sed "s/.fa/.bam/")
+            sort_name=$(echo "$bin"|sed "s/.fa/.sort.bam/")
+            samtools sort -@ {config[cores][abundance]} -o "$sort_name" "$bin_name"
 
             echo -e "\nExtracting stats from sorted BAM file with samtools flagstat at $(date) ... "
-            samtools flagstat $(echo "$bin"|sed "s/.fa/.sort.bam/") > $(echo "$bin"|sed "s/.fa/.map/")
+            map_file=$(echo "$bin"|sed "s/.fa/.map/")
+            sort_bam=$(echo "$bin"|sed "s/.fa/.sort.bam/")
+            samtools flagstat "$sort_bam" > "$map_file"
 
             echo -e "\nAppending bin length to bin.map stats file ... "
-            echo -n "Bin Length = " >> $(echo "$bin"|sed "s/.fa/.map/")
+            echo -n "Bin Length = " >> "$map_file"
 
-            # Need to check if bins are original (megahit-assembled) or strict/permissive (metaspades-assembled)
             if [[ $bin == *.strict.fa ]] || [[ $bin == *.permissive.fa ]] || [[ $bin == *.s.fa ]] || [[ $bin == *.p.fa ]];then
-                less $bin |grep ">"|cut -d '_' -f4|awk '{{sum+=$1}}END{{print sum}}' >> $(echo "$bin"|sed "s/.fa/.map/")
+                less $bin |grep ">"| cut -d '_' -f4|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
             else
-                less $bin |grep ">"|cut -d '-' -f4|sed 's/len_//g'|awk '{{sum+=$1}}END{{print sum}}' >> $(echo "$bin"|sed "s/.fa/.map/")
+                less $bin |grep ">"| cut -d '-' -f4|sed 's/len_//g'|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
             fi
 
-            paste $(echo "$bin"|sed "s/.fa/.map/")
+            paste "$map_file"
 
             echo -e "\nCalculating abundance for bin $bin ... "
-            echo -n "$bin"|sed "s/.fa//" >> $(echo "$bin"|sed "s/.fa/.abund/")
-            echo -n $'\t' >> $(echo "$bin"|sed "s/.fa/.abund/")
+            abund_file=$(echo "$bin"|sed "s/.fa/.abund/")
+            echo -n "$bin"|sed "s/.fa//" >> "$abund_file"
+            echo -n $'\t' >> "$abund_file"
 
-            X=$(less $(echo "$bin"|sed "s/.fa/.map/")|grep "mapped ("|awk -F' ' '{{print $1}}')
-            Y=$(less $(echo "$bin"|sed "s/.fa/.map/")|tail -n 1|awk -F' ' '{{print $4}}')
+            X=$(less "$map_file"|grep "mapped ("|awk -F' ' '{{print $1}}')
+            Y=$(less "$map_file"|tail -n 1|awk -F' ' '{{print $4}}')
             Z=$(less "../map.stats"|grep "mapped ("|awk -F' ' '{{print $1}}')
-            awk -v x="$X" -v y="$Y" -v z="$Z" 'BEGIN{{print (x/y/z) * 1000000}}' >> $(echo "$bin"|sed "s/.fa/.abund/")
-            
-            paste $(echo "$bin"|sed "s/.fa/.abund/")
-            
+            awk -v x="$X" -v y="$Y" -v z="$Z" 'BEGIN{{print (x/y/z) * 1000000}}' >> "$abund_file"
+
+            paste "$abund_file"
+
             echo -e "\nRemoving temporary files for bin $bin ... "
             rm $bin
-            cp $(echo "$bin"|sed "s/.fa/.map/") {output}
-            mv $(echo "$bin"|sed "s/.fa/.abund/") ../
+            cp "$map_file" {output}
+            mv "$abund_file" ../
             cd ..
-            rm -r $(echo "$bin"| sed "s/.fa//")
+            bin_dir=$(echo "$bin"| sed "s/.fa//")
+            rm -r "$bin_dir"
         done
 
         echo -e "\nDone processing all bins, summarizing results into sample.abund file ... "
         cat *.abund > $(basename {input.bins}).abund
 
         echo -ne "\nSumming calculated abundances to obtain normalization value ... "
-        norm=$(less $(basename {input.bins}).abund |awk '{{sum+=$2}}END{{print sum}}');
+        norm=$(awk '{{sum+=$2}} END {{print sum}}' $(basename {input.bins}).abund)
         echo $norm
 
         echo -e "\nGenerating column with abundances normalized between 0 and 1 ... "
-        awk -v NORM="$norm" '{{printf $1"\t"$2"\t"$2/NORM"\\n"}}' $(basename {input.bins}).abund > abundance.txt
+        awk -v NORM="$norm" "{{printf '%s\t%s\t%f\n', $1, $2, $2/NORM}}" $(basename {input.bins}).abund > abundance.txt
 
         rm $(basename {input.bins}).abund
         mv abundance.txt $(basename {input.bins}).abund
 
         mv $(basename {input.bins}).abund {output}
-		"""
+        """

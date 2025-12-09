@@ -5,6 +5,7 @@
 # Temporary and log files
 *.log
 *.tmp
+slurm*.out
 
 # Output directories
 test/
