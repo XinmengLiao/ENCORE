@@ -213,7 +213,7 @@ bash ENCORE.sh -o ./output -c test -d Toy_Dataset --reporter
 | Taxonomy | `taxonomy.smk` | GTDB-Tk classification |
 | Extraction | `extraction.smk` | Gene/protein extraction |
 | GEM Reconstruction | `carveme.smk` | CarveMe GEM generation |
-| ecGEM Reconstruction | `GEMtoECGEM.smk` | Ecological GEM generation |
+| ecGEM Reconstruction | `GEMtoECGEM.smk` | Enzyme-constrained GEM generation |
 | **Downstream** | `downstream.smk` | Integrated: Crossmap → Binning → Refinement → Extraction → Metabolic |
 | Network Analysis | `CoGEMNetwork.smk` | Community network construction |
 | Reporter Metabolites | `ReporterMetabolite.smk` | Reporter metabolite identification |
