@@ -162,7 +162,7 @@ conda activate metagem
 bash ENCORE.sh -o ./output -c test -d Toy_Dataset --gem --keep-incomplete
 ```
 
-#### Step 11: Reconstruct Ecological GEMs (ecGEMs)
+#### Step 11: Reconstruct Enzyme-Constrained GEMs (ecGEMs)
 Reconstruct enzyme-constrained genome-scale metabolic models from conventional models.
 
 ```bash

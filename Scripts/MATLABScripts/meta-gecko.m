@@ -238,9 +238,6 @@ for i = 1:length(GEMfiles)
     ecmodel_path = strcat(model_tmp)
     ecModel = readYAMLmodel(ecmodel_path)
 
-    % Store the ecModel with optimal growth rate == 0 
-    minus_growth = table([], [], [], 'VariableNames', {'sample', 'bin', 'growth'});
-
     % check the reactions in ecModel ensure exchange reations are completed 
     [ecModel.rxns, constructEquations(ecModel)];
     

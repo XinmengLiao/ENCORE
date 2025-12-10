@@ -40,8 +40,8 @@ get_smk_file() {
         gem) echo "carveme.smk" ;;
         ecgem) echo "GEMtoECGEM.smk" ;;
         downstream) echo "downstream.smk" ;;
-        network) echo "CoGEMNetwork.smk" ;;
-        reporter) echo "ReporterMetabolite.smk" ;;
+        network) echo "network.smk" ;;
+        reporter) echo "reporter.smk" ;;
         *) return 1 ;;
     esac
 }

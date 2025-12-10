@@ -1,0 +1,32 @@
+import os
+import glob
+
+configfile: os.path.join(workflow.basedir, "../../ENCORE_config.yaml")
+
+# Build the root path - prefer path_root, then OUTPUT_DIR, then config value
+root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path']['root']
+
+# Handle relative paths for root_path
+if not os.path.isabs(root_path):
+    root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
+
+
+rule all:
+    input:
+        expand(f"{root_path}/{config['folder']['reporter']}/reporter_metabolites.txt")
+
+
+####--------------------------------------####
+#### Reporter Metabolites Identification
+####--------------------------------------####
+
+rule ReporterMetabolite:
+    input:
+        network: f"{root_path}/{config['path']['mmnetwork_file']}",
+        daa: f"{root_path}/{config['path']['dda_file']}"
+    output:
+        f"{root_path}/{config['folder']['reporter']}/reporter_metabolites.txt"
+    shell:
+        """
+        Rscript $(dirname {root_path})/{config[Rscripts][identifyRM]} {input.network} {input.daa}
+        """
