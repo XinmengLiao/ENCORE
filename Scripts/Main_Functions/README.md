@@ -190,7 +190,7 @@ Identify reporter metabolites from the community network.
 ```bash
 conda activate metagem
 
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --reporter
+bash ENCORE.sh -o ./output -c sample1 -d my_data --reporter --daa-file /path/to/daa_results.tsv
 ```
 
 ---

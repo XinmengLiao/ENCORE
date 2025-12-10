@@ -4,7 +4,6 @@ path:
     scripts: Scripts
     gtdbtk: [path/to/gtdbtk]
     mmnetwork_file: [path/to/mmnetworks.tsv]
-    dda_file: [path/to/differential_abundance_analysis_results.tsv]
 folder:
     logs: logs
     benchmarks: benchmarks

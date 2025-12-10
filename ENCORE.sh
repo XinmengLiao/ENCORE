@@ -7,6 +7,7 @@ set -euo pipefail
 OUTPUT_DIR=""
 COHORT=""
 DATA_FOLDER=""
+DAA_FILE=""
 SCRIPTS_DIR="Scripts"  
 CORES=1
 DRY_RUN=false
@@ -19,6 +20,7 @@ declare -a MODULES=()
 # ================================
 PREPROCESSING_MODULES="quality trim assembly"
 DOWNSTREAM_MODULES="crossmap maxbin concoct metabat refinement reassembly abundance taxonomy extraction gem ecgem"
+REPORTER_MODULES="network reporter"
 ALL_MODULES="quality trim assembly crossmap maxbin concoct metabat refinement reassembly abundance taxonomy extraction gem ecgem network reporter"
 
 # Function to get snakemake file for a module
@@ -159,7 +161,7 @@ run_snakemake() {
     desc=$(get_module_desc "$module")
     log_info "Running: $desc ($module)"
     
-    local snakemake_opts="--cores $CORES --config OUTPUT_DIR=\"$OUTPUT_DIR\" COHORT=\"$COHORT\" DATA_FOLDER=\"$DATA_FOLDER\""
+    local snakemake_opts="--cores $CORES --config OUTPUT_DIR=\"$OUTPUT_DIR\" COHORT=\"$COHORT\" DATA_FOLDER=\"$DATA_FOLDER\" DAA_FILE=\"$DAA_FILE\""
     
     if [[ "$DRY_RUN" == true ]]; then
         snakemake_opts="$snakemake_opts --dry-run"
@@ -253,6 +255,7 @@ OPTIONS:
   -d, --data-folder <name>    Data folder name (default: Toy_Dataset)
   -t, --cores <num>           Number of CPU cores (default: 1)
   -s, --scripts-dir <dir>     Scripts directory (default: Scripts)
+  --daa-file <path>           DAA file path for reporter metabolites analysis (required for --reporter)
   
   -n, --dry-run               Perform a dry run without executing
   -k, --keep-incomplete       Keep incomplete output files (don't delete intermediate files)
@@ -332,6 +335,10 @@ while [[ $# -gt 0 ]]; do
             DATA_FOLDER="$2"
             shift 2
             ;;
+        --daa-file)
+            DAA_FILE="$2"
+            shift 2
+            ;;
         -s|--scripts-dir)
             SCRIPTS_DIR="$2"
             shift 2
@@ -401,7 +408,15 @@ done
 # ================================
 # Validate and execute
 # ================================
+# Validate and execute
+# ================================
 if ! validate_env; then
+    exit 1
+fi
+
+# Check if reporter module is in MODULES and DAA_FILE is provided
+if [[ " ${MODULES[@]} " =~ " reporter " ]] && [[ -z "$DAA_FILE" ]]; then
+    log_error "--reporter requires --daa-file parameter"
     exit 1
 fi
 

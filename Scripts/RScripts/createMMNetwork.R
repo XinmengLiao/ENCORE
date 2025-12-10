@@ -76,5 +76,5 @@ create.network <- function(data){
 }
 
 network.all <- create.network(merged_taxa_fva)
-write.table(fva.all.exchange, file = file.path(output_file, "MMNetwork.txt"), sep = "\t", row.names = FALSE, quote = FALSE)
+write.table(network.all, file = file.path(output_file, "MMNetwork.txt"), sep = "\t", row.names = FALSE, quote = FALSE)
 

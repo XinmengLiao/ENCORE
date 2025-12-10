@@ -13,7 +13,7 @@ if not os.path.isabs(root_path):
 
 rule all:
     input:
-        expand(f"{root_path}/{config['folder']['reporter']}/reporter_metabolites.txt")
+        f"{root_path}/{config['folder']['reporter']}/reporter_metabolites.txt"
 
 
 ####--------------------------------------####
@@ -22,11 +22,14 @@ rule all:
 
 rule ReporterMetabolite:
     input:
-        network: f"{root_path}/{config['path']['mmnetwork_file']}",
-        daa: f"{root_path}/{config['path']['dda_file']}"
+        network = f"{root_path}/{config['folder']['network']}/MMNetwork.txt",
+        fva = f"{root_path}/{config['folder']['network']}/fva_all_nonzero.tsv",
+        daa = config.get('DAA_FILE', '')
     output:
         f"{root_path}/{config['folder']['reporter']}/reporter_metabolites.txt"
     shell:
         """
-        Rscript $(dirname {root_path})/{config[Rscripts][identifyRM]} {input.network} {input.daa}
+        mkdir -p $(dirname {output})
+
+        Rscript $(dirname {root_path})/{config[Rscripts][identifyRM]} {input.network} {input.daa} {input.fva} $(dirname {output})
         """
