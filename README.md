@@ -156,5 +156,4 @@ bash ENCORE.sh -o ./results -c test -d my_reads --dry-run --metagenome
 bash ENCORE.sh -o ./results -c test -d my_reads -t 16 --metagenome --metabolic --reporter
 ```
 
-# More details of functions and modules
-[ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md)
+### More details of functions and modules: [ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md)
