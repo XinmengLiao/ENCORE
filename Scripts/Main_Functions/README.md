@@ -186,6 +186,12 @@ bash ENCORE.sh -o ./output -c test -d Toy_Dataset --network
 
 #### Step 13: Identify Reporter Metabolites
 Identify reporter metabolites from the community network.
+Required files:
+- Differential Abundance Analysis results. Please follow the recommended format, where the first column should be: 
+1) classification: the entire classfication generated from GTDB-tk;
+2) LogFC: log2-FoldChange
+3) PValue
+4) FDR: the false discovery rate
 
 ```bash
 conda activate metagem

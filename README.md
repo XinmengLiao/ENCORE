@@ -59,7 +59,7 @@ More GTDB-tk databases and versions could be found [here](https://ecogenomics.gi
 
 [GECKO 3.0](https://github.com/SysBioChalmers/GECKO) is a MATLAB toolbox for reconstructing enzyme-constrained genome-scale metabolic models (ecModels). It extends genome-scale metabolic models (GEMs) by including enzymatic constraints, enabling more accurate simulations of metabolism.
 
-Please follow the installations in [GECKO3 tutorial](https://github.com/SysBioChalmers/GECKO/wiki). Note: RAVEN Toolbox and Gurobi Optimizer are required. [RAVEN Toolbox](https://github.com/SysBioChalmers/RAVEN) to reconstruct GEMs and [Gurobi Optimizer](https://www.gurobi.com/downloads/) to solve flux balanced analysis (FBA) and flux variable analysis (FVA).
+Please follow the installations in [GECKO3 tutorial](https://github.com/SysBioChalmers/GECKO/wiki). Note: RAVEN Toolbox, Gurobi Optimizer, and DLKcat are required. [RAVEN Toolbox](https://github.com/SysBioChalmers/RAVEN) to reconstruct GEMs and [Gurobi Optimizer](https://www.gurobi.com/downloads/) to solve flux balanced analysis (FBA) and flux variable analysis (FVA). DLKcat to predict the enzymes' Kcat values. 
 
 ⚠️ **Note:**
 
@@ -69,12 +69,12 @@ Please follow the installations in [GECKO3 tutorial](https://github.com/SysBioCh
   
 
 ```bash
-gecko_dir=$(find / -type d -name "GECKO\ Tool" 2>/dev/null | head -n 1)
-cp Installation/GECKO3_adapted_functions/fuzzyKcatMatching.m ${gecko_dir}/src/geckomat/gather_kcats/fuzzyKcatMatching.m
-cp Installation/GECKO3_adapted_functions/getECfromDatabase_kegg.m ${gecko_dir}/src/geckomat/get_enzyme_data/getECfromDatabase_kegg.m
-cp Installation/GECKO3_adapted_functions/getECfromDatabase_uniprot.m ${gecko_dir}/src/geckomat/get_enzyme_data/getECfromDatabase_uniprot.m
-cp Installation/GECKO3_adapted_functions/loadConventionalGEM.m ${gecko_dir}/src/geckomat/utilities/loadConventionalGEM.m
-cp Installation/GECKO3_adapted_functions/makeEcModel.m ${gecko_dir}/src/geckomat/change_model/makeEcModel.m
+gecko_dir=$(find / -type d -name "GECKO\ Toolbox" 2>/dev/null | head -n 1)
+cp Scripts/InstallationScripts/fuzzyKcatMatching.m ${gecko_dir}/src/geckomat/gather_kcats/fuzzyKcatMatching.m
+cp Scripts/InstallationScripts/getECfromDatabase_kegg.m ${gecko_dir}/src/geckomat/get_enzyme_data/getECfromDatabase_kegg.m
+cp Scripts/InstallationScripts/getECfromDatabase_uniprot.m ${gecko_dir}/src/geckomat/get_enzyme_data/getECfromDatabase_uniprot.m
+cp Scripts/InstallationScripts/loadConventionalGEM.m ${gecko_dir}/src/geckomat/utilities/loadConventionalGEM.m
+cp Scripts/InstallationScripts/makeEcModel.m ${gecko_dir}/src/geckomat/change_model/makeEcModel.m
 ```
 
 ## 🚀 Running ENCORE
@@ -155,3 +155,6 @@ bash ENCORE.sh -o ./results -c test -d my_reads --dry-run --metagenome
 # Run the complete analysis pipeline with all modules
 bash ENCORE.sh -o ./results -c test -d my_reads -t 16 --metagenome --metabolic --reporter
 ```
+
+# More details of functions and modules
+[ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md)
