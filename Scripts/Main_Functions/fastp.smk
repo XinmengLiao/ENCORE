@@ -40,6 +40,7 @@ rule fastp:
     output:
         R1 = f"{root_path}/{config['folder']['qfiltered']}/{{sampleID}}/{{sampleID}}_R1_qfiltered.fastq.gz",
         R2 = f"{root_path}/{config['folder']['qfiltered']}/{{sampleID}}/{{sampleID}}_R2_qfiltered.fastq.gz"
+    threads: config['cores']['fastp']
     shell:
         """
         echo -e "$(date)\nSection starts\n ***** Fastp ***** \n"
@@ -49,7 +50,7 @@ rule fastp:
             -I {input.R2} \
             -o {output.R1} \
             -O {output.R2} \
-            --thread {config[cores][fastp]} \
+            --thread {threads} \
             -j $(dirname {output.R1})/$(echo $(basename $(dirname {output.R1}))).json \
             -h $(dirname {output.R1})/$(echo $(basename $(dirname {output.R1}))).html
 

@@ -7,8 +7,9 @@
 *.tmp
 slurm*.out
 
-# Output directories
-test/
+# Sample directories
+Toy_Dataset/
+Example/output/
 
 # OS files
 .DS_Store

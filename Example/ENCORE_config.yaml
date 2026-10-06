@@ -1,0 +1,98 @@
+path:
+    root: output
+    scratch: scratch
+    scripts: ../Scripts
+    gtdbtk: /cfs/klemming/projects/snic/naiss2023-23-637/ecgem/release220/
+    mmnetwork_file: [path/to/mmnetworks.tsv] # what is this file???
+folder:
+    logs: logs
+    benchmarks: benchmarks
+    quality: fastqc
+    qfiltered: qfiltered
+    assemblies: assemblies
+    crossMap: crossMap 
+    concoct: concoct
+    maxbin: maxbin
+    metabat: metabat
+    refined: refined_bins
+    reassembled: reassembled_bins
+    classification: GTDBTk
+    abundance: abundance
+    proteinBins: protein_bins
+    dnaBins: dna_bins
+    GEMs: GEMs
+    ecGEMs: ecGEMs
+    stats: stats
+    network: mmnetwork
+    reporter: reporter_metabolite
+DataforScripts:
+    assemblyVis: ../Scripts/DataforScripts/assemblyVis.R
+    binningVis: ../Scripts/DataforScripts/binningVis.R
+    modelVis: ../Scripts/DataforScripts/modelVis.R
+    compositionVis: ../Scripts/DataforScripts/compositionVis.R
+    carveme: ../Scripts/DataforScripts/media_db.tsv
+    UniprotID: ../Scripts/DataforScripts/UniprotID.txt
+    kegg: ../Scripts/DataforScripts/kegglist.txt
+PythonScripts:
+    kallisto2concoct: ../Scripts/PythonScripts/kallisto2concoct.py
+    binFilter: ../Scripts/PythonScripts/binFilter.py
+    adjust_coverage: ../Scripts/PythonScripts/adjust_coverage.py
+MatlabScripts:
+    createECGEM: ../Scripts/MATLABScripts/CreateECModel.m
+    makeECGEM: ../Scripts/MATLABScripts/meta-gecko.m
+    adaptertemplate: ../Scripts/MATLABScripts/adapterTemplate.m
+Rscripts:
+    assemblyVis: ../Scripts/RScripts/assemblyVis.R
+    binningVis: ../Scripts/RScripts/binningVis.R
+    modelVis: ../Scripts/RScripts/modelVis.R
+    compositionVis: ../Scripts/RScripts/compositionVis.R
+    taxonomy: ../Scripts/RScripts/taxonomy.R
+    correctMetName: ../Scripts/RScripts/correctMetName.R
+    identifyRM: ../Scripts/RScripts/identifyRM.R
+    createMMNetwork: ../Scripts/RScripts/createMMNetwork.R
+cores:
+    fastp: 16 
+    megahit: 64
+    crossMap: 16
+    concoct: 16
+    metabat: 16
+    maxbin: 16
+    refine: 16
+    reassemble: 64
+    classify: 16
+    gtdbtk: 16
+    abundance: 16
+    carveme: 16
+    smetana: 16
+    memote: 16
+    grid: 16
+    prokka: 16
+    roary: 16
+    diamond: 16
+params:
+    cutfasta: 10000
+    assemblyPreset: meta-sensitive
+    assemblyMin: 1000
+    concoct: 400
+    concoctMinLength: 350
+    metabatMin: 50000
+    seed: 420
+    minBin: 1500
+    maxbinProb: 0.9
+    maxbinMinLength: 1000
+    maxbinIteration: 10
+    refineMem: 1600
+    refineComp: 50
+    refineCont: 10
+    reassembleMem: 1600
+    reassembleComp: 50
+    reassembleCont: 10
+    carveMedia: M8
+    smetanaMedia: M1,M2,M3,M4,M5,M7,M8,M9,M10,M11,M13,M14,M15A,M15B,M16
+    smetanaSolver: CPLEX
+    roaryI: 90
+    roaryCD: 90
+    FVAsensitivity: 0.95
+envs:
+    metagem: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/envs/metagem
+    metawrap: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/envs/metawrap

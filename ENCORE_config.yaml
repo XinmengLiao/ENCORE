@@ -71,7 +71,7 @@ cores:
     diamond: 16
 params:
     cutfasta: 10000
-    assemblyPreset: meta-sensitive # can change to the meta-large later for faster testing speed, or set manually 
+    assemblyPreset: meta-sensitive
     assemblyMin: 1000
     concoct: 400
     concoctMinLength: 350
@@ -94,5 +94,5 @@ params:
     roaryCD: 90
     FVAsensitivity: 0.95
 envs:
-    metagem: ENCORE/envs/metagem
-    metawrap: ENCORE/envs/metawrap
+    metagem: [path/to/metagem_env]
+    metawrap: [path/to/metawrap_env]

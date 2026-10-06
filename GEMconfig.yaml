@@ -1,0 +1,121 @@
+path:
+    root: /cfs/klemming/projects/snic/naiss2023-23-637/ecgem/metaGEM/workflow 
+    scratch: /cfs/klemming/projects/snic/naiss2023-23-637/ecgem/metaGEM/workflow/scratch
+    gtdbtk: /cfs/klemming/projects/snic/naiss2023-23-637/ecgem/release220/
+folder:
+    data: dataset
+    logs: logs
+    assemblies: assemblies
+    scripts: scripts
+    crossMap: crossMap 
+    concoct: concoct
+    maxbin: maxbin
+    metabat: metabat
+    refined: refined_bins
+    reassembled: reassembled_bins
+    classification: GTDBTk
+    abundance: abundance
+    GRiD: GRiD
+    GEMs: GEMs
+    ecGEMs: ecGEMs
+    gtdbtk: GTDBtk
+    SMETANA: SMETANA
+    memote: memote
+    qfiltered: qfiltered
+    stats: stats
+    proteinBins: protein_bins
+    dnaBins: dna_bins
+    pangenome: pangenome
+    kallisto: kallisto
+    kallistoIndex: kallistoIndex
+    benchmarks: benchmark
+    prodigal: prodigal
+    blastp: blastp
+    blastp_db: blastp_db
+scripts:
+    kallisto2concoct: kallisto2concoct.py
+    prepRoary: prepareRoaryInput.R
+    binFilter: binFilter.py
+    qfilterVis: qfilterVis.R
+    assemblyVis: assemblyVis.R
+    binningVis: binningVis.R
+    modelVis: modelVis.R
+    compositionVis: compositionVis.R
+    taxonomyVis: taxonomyVis.R
+    carveme: media_db.tsv
+    toy: download_toydata.txt
+    taxonomy: taxonomy.R
+    UniprotID: UniprotID.txt
+    createECGEM: CreateECModel.m
+    makeECGEM: meta-gecko.m
+    adjust_coverage: adjust_coverage.py
+    adaptertemplate: adapterTemplate.m
+    kegg: kegglist.txt
+    extractMet: meta-gecko-extractMet.m
+    correctMetName: correctMetName.R
+cores:
+    fastp: 16 
+    megahit: 32
+    crossMap: 128
+    concoct: 256
+    metabat: 256
+    maxbin: 256
+    refine: 128
+    reassemble: 128
+    classify: 2
+    gtdbtk: 20
+    abundance: 128
+    carveme: 128
+    smetana: 12
+    memote: 4
+    grid: 24
+    prokka: 2
+    roary: 12
+    diamond: 12
+params:
+    cutfasta: 10000
+    assemblyPreset: meta-sensitive # can change to the meta-large later for faster testing speed, or set manually 
+    assemblyMin: 1000
+    concoct: 400
+    metabatMin: 50000
+    seed: 420
+    minBin: 1500
+    refineMem: 1600
+    refineComp: 50
+    refineCont: 10
+    reassembleMem: 1600
+    reassembleComp: 50
+    reassembleCont: 10
+    carveMedia: M8
+    smetanaMedia: M1,M2,M3,M4,M5,M7,M8,M9,M10,M11,M13,M14,M15A,M15B,M16
+    smetanaSolver: CPLEX
+    roaryI: 90
+    roaryCD: 90
+envs:
+    metagem: /cfs/klemming/projects/snic/naiss2023-23-637/ecgem/envs/metagem
+    metawrap: /cfs/klemming/projects/snic/naiss2023-23-637/ecgem/envs/metawrap
+    #prokkaroary: envs/prokkaroary
+    #metagem: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/metaGEM/envs/metagem/
+    #metawrap: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/metaGEM/envs/metawrap/
+
+ 
+## log
+# 1. all the idvar need to have double crackets {{}}
+# 2. config usage: {config[path][root]}/config.yaml
+# 3. conda env needs large space. It will be better if install in a path with prefix. The package path also need to change instead of the default ones. 
+# 4. in metagem conda env, scikit-learn need to be downgrade to v1.1.0 (scikit-learn=1.1.0), otherwise concoct can not be run.
+#    The best way to do so: specify the scikit-learn version in env.yaml 
+# when reload snakemake, the whole process will start again. why even there is the file, snakemake starts again? how to prevent this? 
+# 5. samtools need version >= 1.9, otherwise there will be problem with the library share database etc. 
+#    But currently in the project, we can not install samtools in the conda env. So instead, we use samtools from 'module load samtool v1.20'
+# 6. Metawrap, recommend to use channel ursky to install metawrap-mg=1.3.2, and use mamba. But mamba does not work in the PDC
+# 7. checkM need to manually download the database: https://zenodo.org/records/7401545#.Y44ymHbMJD8, and need to set the root: checkm data setRoot <path/to/directory>
+# 8. Bin reassemble process, need to pip install pyyaml to run `pip install PyYAML==5.4.1`. 
+# In the PDC, need to stack 2 conda envs together to run the bin reassemble process. DO NOT use module load snakemake, otherwise may fail. 
+# 9. in the PDC, every time before using snakemake, need to change the path of snakemake cache: 
+# `rm -rf ~/.cache/snakemake`
+# `export XDG_CACHE_HOME=/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/metaGEM/workflow/.snakemake/`
+# 10. For constructing the GEMs, need to install carveme and diamond:
+# `pip install --prefix=/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/envs/metagem carveme`
+# `conda install -c bioconda diamond`
+# though carveme is installed in the custom location, it can still be directly used in the conda env 
