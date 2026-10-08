@@ -15,6 +15,7 @@ CORES=1
 DRY_RUN=false
 QUIET=false
 KEEP_INCOMPLETE=false
+SLURM=false
 declare -a MODULES=()
 
 # ================================
@@ -146,6 +147,16 @@ list_modules() {
 # Snakemake wrapper functions
 # ================================
 
+# Read a key from a top-level block (e.g. 'slurm:' or 'cores:') of the config file
+read_config_value() {
+    awk -v blk="$1" -v key="$2" '
+        $0 ~ "^"blk":" {in_blk=1; next}
+        /^[^[:space:]#]/ {in_blk=0}
+        in_blk && $1 == key":" {sub(/[[:space:]]*#.*/, "", $0); sub(/^[^:]*:[[:space:]]*/, "", $0); print; exit}
+    ' "$CONFIG_FILE"
+}
+read_slurm_config() { read_config_value slurm "$1"; }
+
 run_snakemake() {
     local module=$1
     local smk_file
@@ -171,6 +182,34 @@ run_snakemake() {
     
     if [[ "$KEEP_INCOMPLETE" == true ]]; then
         snakemake_opts="$snakemake_opts --keep-incomplete"
+    fi
+
+    # Rules without a 'threads:' directive default to 1 thread (and 1 CPU on Slurm),
+    # but their shell commands use cores:<key> from the config. Set it explicitly.
+    case "$module" in
+        crossmap) snakemake_opts="$snakemake_opts --set-threads crossMapSeries=$(read_config_value cores crossMap)" ;;
+    esac
+
+    if [[ "$SLURM" == true ]]; then
+        local slurm_account slurm_partition slurm_jobs slurm_time slurm_nodes slurm_mail_user slurm_mail_type
+        slurm_account=$(read_slurm_config account)
+        slurm_partition=$(read_slurm_config partition)
+        slurm_jobs=$(read_slurm_config jobs)
+        slurm_time=$(read_slurm_config time)
+        slurm_nodes=$(read_slurm_config nodes)
+        slurm_mail_user=$(read_slurm_config mail_user)
+        slurm_mail_type=$(read_slurm_config mail_type)
+        if [[ -z "$slurm_account" || -z "$slurm_partition" || -z "$slurm_jobs" || -z "$slurm_time" ]]; then
+            log_error "Incomplete 'slurm:' section in $CONFIG_FILE (need account, partition, jobs, time)"
+            return 1
+        fi
+        # Snakemake 7 (no --executor): submit every job with sbatch via --cluster.
+        # {threads} is each rule's thread count from the config (cores: section).
+        local sbatch_cmd="sbatch -A $slurm_account -p $slurm_partition -N ${slurm_nodes:-1} -c {threads} -t $slurm_time -J $module"
+        if [[ -n "$slurm_mail_user" ]]; then
+            sbatch_cmd="$sbatch_cmd --mail-user=$slurm_mail_user --mail-type=${slurm_mail_type:-ALL}"
+        fi
+        snakemake_opts="$snakemake_opts --cluster \"$sbatch_cmd\" --jobs $slurm_jobs --latency-wait 60"
     fi
     
     if eval "snakemake -s \"${SCRIPTS_DIR}/Main_Functions/${smk_file}\" $snakemake_opts"; then
@@ -257,6 +296,7 @@ OPTIONS:
   -s, --scripts-dir <dir>     Scripts directory (default: Scripts)
   --daa-file <path>           DAA file path for reporter metabolites analysis (required for --reporter)
   
+  --slurm                     Submit each Snakemake job to Slurm with sbatch
   -n, --dry-run               Perform a dry run without executing
   -k, --keep-incomplete       Keep incomplete output files (don't delete intermediate files)
   -l, --list                  List all available modules
@@ -351,6 +391,10 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        --slurm)
+            SLURM=true
+            shift
+            ;;
         -k|--keep-incomplete)
             KEEP_INCOMPLETE=true
             shift
@@ -419,6 +463,16 @@ export PATH
 
 if ! validate_env; then
     exit 1
+fi
+
+# The .smk files resolve a relative OUTPUT_DIR against the Scripts/ folder,
+# so make it absolute. Input reads are read from <OUTPUT_DIR>/<DATA_FOLDER>,
+# so if DATA_FOLDER is an existing directory (e.g. Toy_Dataset),
+# convert it to a path relative to OUTPUT_DIR.
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(realpath "$OUTPUT_DIR")"
+if [[ -d "$DATA_FOLDER" ]]; then
+    DATA_FOLDER="$(realpath --relative-to="$OUTPUT_DIR" "$DATA_FOLDER")"
 fi
 
 # Use absolute paths (snakemake runs from the Snakefile directory context)

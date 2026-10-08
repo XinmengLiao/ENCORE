@@ -52,8 +52,8 @@ Rscripts:
     createMMNetwork: ../Scripts/RScripts/createMMNetwork.R
 cores:
     fastp: 16 
-    megahit: 64
-    crossMap: 16
+    megahit: 128
+    crossMap: 128
     concoct: 16
     metabat: 16
     maxbin: 16
@@ -96,3 +96,11 @@ params:
 envs:
     metagem: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/envs/metagem
     metawrap: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/envs/metawrap
+slurm:
+    account: naiss2026-4-670
+    partition: main
+    jobs: 3
+    time: 20:00:00 # HH:MM:SS, as in sbatch --time
+    nodes: 1 # sbatch -N
+    mail_user: ssamantha.data@gmail.com
+    mail_type: ALL

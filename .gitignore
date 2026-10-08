@@ -10,7 +10,18 @@ slurm*.out
 # Sample directories
 Toy_Dataset/
 Example/output/
+# Example/output/fastqc/Sample*/Sample*.zip
+# Example/output/qfiltered
+# Example/output/logs
+# Example/output/benchmarks
+# Example/output/assemblies/Sample*/Sample*.fastq.gz
+# Example/output/concoct
+# Example/output/maxbin
+# Example/output/crossMap
+# Example/output/metabat
+
 
 # OS files
 .DS_Store
 Thumbs.db
+slurm*
