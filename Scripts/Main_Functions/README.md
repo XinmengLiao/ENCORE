@@ -175,7 +175,16 @@ bash ENCORE.sh -o ./output -c test -d Toy_Dataset --ecgem --keep-incomplete
 
 ### Stage 4: Network Analysis & Reporter Metabolites
 
-#### Step 12: Create Microbe-Metabolite Network
+#### Step 12: Calculate Bin Abundance
+Calculate the abundance of each reassembled bin by mapping the quality-filtered reads back to the bins (bwa and samtools).
+
+```bash
+conda activate metagem
+
+bash ENCORE.sh -o ./output -c test -d Toy_Dataset --abundance
+```
+
+#### Step 13: Create Microbe-Metabolite Network
 Construct microbial community ecological enzyme-constrained genome-scale metabolic models networks.
 
 ```bash
@@ -184,7 +193,7 @@ conda activate metagem
 bash ENCORE.sh -o ./output -c test -d Toy_Dataset --network
 ```
 
-#### Step 13: Identify Reporter Metabolites
+#### Step 14: Identify Reporter Metabolites
 Identify reporter metabolites from the community network.
 Required files:
 - Differential Abundance Analysis results. Please follow the recommended format, where the first column should be: 

@@ -228,7 +228,7 @@ reassembly()    { run_snakemake "reassembly"; }
 abundance()     { run_snakemake "abundance"; }
 taxonomy()      { run_snakemake "taxonomy"; }
 
-extract()       { run_snakemake "extract"; }
+extraction()    { run_snakemake "extraction"; }
 gem()           { run_snakemake "gem"; }
 ecgem()         { run_snakemake "ecgem"; }
 
@@ -301,7 +301,7 @@ INDIVIDUAL MODULES (Metagenome):
   --taxonomy      Bin classifications to species level
 
 INDIVIDUAL MODULES (Metabolic):
-  --extract       Extract genomic and proteomic sequences
+  --extraction    Extract genomic and proteomic sequences
   --gem           Reconstruction of GEMs
   --ecgem         Reconstruction of ecGEMs
   --downstream    Complete downstream analysis (binning to ecGEM)
@@ -387,13 +387,9 @@ while [[ $# -gt 0 ]]; do
             done
             shift
             ;;
-        --quality|--trim|--assembly|--preprocessing|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extract|--gem|--ecgem|--downstream|--network|--reporter)
+        --quality|--trim|--assembly|--preprocessing|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extraction|--gem|--ecgem|--downstream|--network|--reporter)
             # Remove leading dashes
             module="${1#--}"
-            # Handle alias: --extract -> extraction
-            if [[ "$module" == "extract" ]]; then
-                module="extraction"
-            fi
             MODULES+=("$module")
             shift
             ;;

@@ -44,6 +44,7 @@ rule carveme:
         directory(f"{root_path}/{config['folder']['GEMs']}/{{sampleID}}")
     params:
         scratch_dir = f"{root_path}/{config['path']['scratch']}/{config['folder']['GEMs']}"
+    threads: config['cores']['carveme']
     benchmark:
         f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.carveme.benchmark.txt"
     log:
@@ -67,6 +68,7 @@ rule carveme:
             carve $name \
                 -g {config[params][carveMedia]} \
                 -v \
+                --diamond-args "--threads {threads}" \
                 --mediadb $medie_file \
                 --fbc2 \
                 -o ${{binID}}.xml 

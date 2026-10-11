@@ -37,6 +37,7 @@ rule abundance:
         directory(f"{root_path}/{config['folder']['abundance']}/{{sampleID}}")
     params:
         scratch_dir = f"{root_path}/{config['path']['scratch']}"
+    threads: config['cores']['abundance']
     benchmark:
         f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.abundance.benchmark.txt"
     log:
@@ -106,9 +107,9 @@ rule abundance:
             echo -n "Bin Length = " >> "$map_file"
 
             if [[ $bin == *.strict.fa ]] || [[ $bin == *.permissive.fa ]] || [[ $bin == *.s.fa ]] || [[ $bin == *.p.fa ]];then
-                less $bin |grep ">"| cut -d '_' -f4|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
+                cat $bin |grep ">"| cut -d '_' -f4|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
             else
-                less $bin |grep ">"| cut -d '-' -f4|sed 's/len_//g'|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
+                cat $bin |grep ">"| cut -d '-' -f4|sed 's/len_//g'|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
             fi
 
             paste "$map_file"
@@ -118,9 +119,9 @@ rule abundance:
             echo -n "$bin"|sed "s/.fa//" >> "$abund_file"
             echo -n $'\t' >> "$abund_file"
 
-            X=$(less "$map_file"|grep "mapped ("|awk -F' ' '{{print $1}}')
-            Y=$(less "$map_file"|tail -n 1|awk -F' ' '{{print $4}}')
-            Z=$(less "../map.stats"|grep "mapped ("|awk -F' ' '{{print $1}}')
+            X=$(cat "$map_file"|grep "mapped ("|awk -F' ' '{{print $1}}')
+            Y=$(cat "$map_file"|tail -n 1|awk -F' ' '{{print $4}}')
+            Z=$(cat "../map.stats"|grep "mapped ("|awk -F' ' '{{print $1}}')
             awk -v x="$X" -v y="$Y" -v z="$Z" 'BEGIN{{print (x/y/z) * 1000000}}' >> "$abund_file"
 
             paste "$abund_file"
@@ -142,7 +143,7 @@ rule abundance:
         echo $norm
 
         echo -e "\nGenerating column with abundances normalized between 0 and 1 ... "
-        awk -v NORM="$norm" "{{printf '%s\t%s\t%f\n', $1, $2, $2/NORM}}" $(basename {input.bins}).abund > abundance.txt
+        awk -v NORM="$norm" '{{printf "%s\\t%s\\t%f\\n", $1, $2, $2/NORM}}' $(basename {input.bins}).abund > abundance.txt
 
         rm $(basename {input.bins}).abund
         mv abundance.txt $(basename {input.bins}).abund
