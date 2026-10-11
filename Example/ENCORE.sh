@@ -188,7 +188,30 @@ run_snakemake() {
     # but their shell commands use cores:<key> from the config. Set it explicitly.
     case "$module" in
         crossmap) snakemake_opts="$snakemake_opts --set-threads crossMapSeries=$(read_config_value cores crossMap)" ;;
+        refinement) snakemake_opts="$snakemake_opts --set-threads binRefine=$(read_config_value cores refine)" ;;
+        reassembly) snakemake_opts="$snakemake_opts --set-threads binReassemble=$(read_config_value cores reassemble)" ;;
+        gem) snakemake_opts="$snakemake_opts --set-threads carveme=$(read_config_value cores carveme)" ;;
+        abundance) snakemake_opts="$snakemake_opts --set-threads abundance=$(read_config_value cores abundance)" ;;
+        taxonomy) snakemake_opts="$snakemake_opts --set-threads GTDBtk=$(read_config_value cores gtdbtk)" ;;
     esac
+
+    # Modules listed under 'module_envs:' in the config run inside that conda env,
+    # stacked on top of the current one (conda activate --stack). Slurm jobs inherit it.
+    local stack_key stack_env stacked=false
+    stack_key=$(read_config_value module_envs "$module")
+    if [[ -n "$stack_key" ]]; then
+        stack_env=$(read_config_value envs "$stack_key")
+        if [[ -z "$stack_env" || ! -d "$stack_env" ]]; then
+            log_error "Env '$stack_key' for module $module not found in 'envs:' of $CONFIG_FILE"
+            return 1
+        fi
+        set +u
+        eval "$(conda shell.bash hook)"
+        conda activate --stack "$stack_env" || { set -u; log_error "conda activate --stack $stack_env failed"; return 1; }
+        set -u
+        stacked=true
+        log_info "Activated (stacked) conda env: $stack_env"
+    fi
 
     if [[ "$SLURM" == true ]]; then
         local slurm_account slurm_partition slurm_jobs slurm_time slurm_nodes slurm_mail_user slurm_mail_type
@@ -212,7 +235,14 @@ run_snakemake() {
         snakemake_opts="$snakemake_opts --cluster \"$sbatch_cmd\" --jobs $slurm_jobs --latency-wait 60"
     fi
     
-    if eval "snakemake -s \"${SCRIPTS_DIR}/Main_Functions/${smk_file}\" $snakemake_opts"; then
+    local rc=0
+    eval "snakemake -s \"${SCRIPTS_DIR}/Main_Functions/${smk_file}\" $snakemake_opts" || rc=$?
+
+    if [[ "$stacked" == true ]]; then
+        set +u; conda deactivate; set -u
+    fi
+
+    if [[ $rc -eq 0 ]]; then
         log_success "Completed: $module"
         return 0
     else
@@ -267,7 +297,7 @@ reassembly()    { run_snakemake "reassembly"; }
 abundance()     { run_snakemake "abundance"; }
 taxonomy()      { run_snakemake "taxonomy"; }
 
-extract()       { run_snakemake "extract"; }
+extraction()    { run_snakemake "extraction"; }
 gem()           { run_snakemake "gem"; }
 ecgem()         { run_snakemake "ecgem"; }
 
@@ -341,7 +371,7 @@ INDIVIDUAL MODULES (Metagenome):
   --taxonomy      Bin classifications to species level
 
 INDIVIDUAL MODULES (Metabolic):
-  --extract       Extract genomic and proteomic sequences
+  --extraction    Extract genomic and proteomic sequences
   --gem           Reconstruction of GEMs
   --ecgem         Reconstruction of ecGEMs
   --downstream    Complete downstream analysis (binning to ecGEM)
@@ -431,13 +461,9 @@ while [[ $# -gt 0 ]]; do
             done
             shift
             ;;
-        --quality|--trim|--assembly|--preprocessing|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extract|--gem|--ecgem|--downstream|--network|--reporter)
+        --quality|--trim|--assembly|--preprocessing|--crossmap|--maxbin|--concoct|--metabat|--refinement|--reassembly|--abundance|--taxonomy|--extraction|--gem|--ecgem|--downstream|--network|--reporter)
             # Remove leading dashes
             module="${1#--}"
-            # Handle alias: --extract -> extraction
-            if [[ "$module" == "extract" ]]; then
-                module="extraction"
-            fi
             MODULES+=("$module")
             shift
             ;;
@@ -460,6 +486,12 @@ for env_key in metagem metawrap; do
     [[ -d "$env_dir/bin" ]] && PATH="$PATH:$env_dir/bin"
 done
 export PATH
+
+# GTDB-Tk reference data (path: gtdbtk in the config)
+if [[ -z "${GTDBTK_DATA_PATH:-}" ]]; then
+    GTDBTK_DATA_PATH=$(read_config_value path gtdbtk)
+fi
+export GTDBTK_DATA_PATH
 
 if ! validate_env; then
     exit 1

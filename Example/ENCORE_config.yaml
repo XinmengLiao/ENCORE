@@ -58,10 +58,10 @@ cores:
     metabat: 16
     maxbin: 16
     refine: 16
-    reassemble: 64
+    reassemble: 128
     classify: 16
-    gtdbtk: 16
-    abundance: 16
+    gtdbtk: 128
+    abundance: 128
     carveme: 16
     smetana: 16
     memote: 16
@@ -96,6 +96,9 @@ params:
 envs:
     metagem: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/envs/metagem
     metawrap: /cfs/klemming/projects/supr/naiss2023-23-637/ecgem/envs/metawrap
+module_envs: # module: key under envs: to 'conda activate --stack' before running it
+    refinement: metawrap
+    reassembly: metawrap
 slurm:
     account: naiss2026-4-670
     partition: main
