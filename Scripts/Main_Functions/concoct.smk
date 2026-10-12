@@ -20,6 +20,9 @@ root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path'
 if not os.path.isabs(root_path):
     root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
 
+# Paths of scripts and data in the config are relative to the config file folder (passed by ENCORE.sh)
+CONFIG_DIR = config.get('CONFIG_DIR') or os.path.dirname(os.path.dirname(workflow.basedir))
+
 assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
 print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
 SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
@@ -59,7 +62,7 @@ rule concoct:
         gunzip -f $(basename {input.contigs})
 
         echo "Adjusting coverage table."
-        cp $(dirname {root_path})/{config[path][scripts]}/PythonScripts/adjust_coverage.py ./
+        cp "{CONFIG_DIR}/{config[PythonScripts][adjust_coverage]}" ./
         python3 adjust_coverage.py
 
         echo -e "Done. \nCutting up contigs (default 10kbp chunks) ... "

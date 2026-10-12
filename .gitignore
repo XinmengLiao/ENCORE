@@ -7,8 +7,10 @@
 *.tmp
 slurm*.out
 
-# Sample directories
+# Sample directories (toy data is too large for GitHub, see README)
 Toy_Dataset/
+Toy_Dataset.zip*
+*.fastq.gz
 Example/output/
 # Example/output/fastqc/Sample*/Sample*.zip
 # Example/output/qfiltered

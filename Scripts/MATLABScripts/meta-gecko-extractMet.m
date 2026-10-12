@@ -1,6 +1,4 @@
-% Add GECKO and RAVEN path into MatLab path
-%addpath(genpath('/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/GECKO'));
-%addpath(genpath('/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/RAVEN'));
+% GECKO and RAVEN are added to the MATLAB path by ENCORE.sh --ecgem (Scripts/Main_Functions/GEMtoECGEM.smk)
 
 % Check installation
 %GECKOInstaller.install

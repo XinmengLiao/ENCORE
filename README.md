@@ -14,12 +14,14 @@ This is an end-to-end pipeline implemented using [Snakemake](https://snakemake.r
 # Installation
 
 ## 📋 Requirements
-- Linux
-- Snakemake ≥ 3.5  
+- Linux or macOS
+- Snakemake ≥ 7 (all modules except `--fva` and `--reporter`, which run in plain bash)
 - Python ≥ 3.10  
-- Conda (MetaGEM, MetaWRAP)
-- GDTK-db
-- Configuration file `ENCORE_config.yaml` (Should be in the same directory with `ENCORE.sh`)
+- Conda (metaGEM, metaWRAP)
+- GTDB-Tk reference data (R220)
+- MATLAB (with the `matlab` command on PATH) with GECKO 3, RAVEN Toolbox and Gurobi, and Docker (DLKcat)
+- R with `dplyr`, `tidyr` and `Maaslin2` (`--reporter`)
+- Configuration file `ENCORE_config.yaml` (in the same directory as `ENCORE.sh`)
 
 ## ⚙️ Environment and tools
 #### MetaGEM and MetaWRAP
@@ -66,54 +68,52 @@ Please follow the installations in [GECKO3 tutorial](https://github.com/SysBioCh
 
 1. Since GECKO 3.0 is applied via **MATLAB**, a valid MATLAB license is required.
   
-2. Several functions of GECKO 3.0 need to be replaced by the following scripts before running GECKO 3.0.
-  
+2. ENCORE uses its own versions of several GECKO 3.0 functions (`Scripts/InstallationScripts/`: `fuzzyKcatMatching.m`, `getECfromDatabase_kegg.m`, `getECfromDatabase_uniprot.m`, `loadConventionalGEM.m`, `makeEcModel.m`). `--ecgem` puts this folder on top of the MATLAB path, so the GECKO installation does not need to be changed.
 
-```bash
-gecko_dir=$(find / -type d -name "GECKO\ Toolbox" 2>/dev/null | head -n 1)
-cp Scripts/InstallationScripts/fuzzyKcatMatching.m ${gecko_dir}/src/geckomat/gather_kcats/fuzzyKcatMatching.m
-cp Scripts/InstallationScripts/getECfromDatabase_kegg.m ${gecko_dir}/src/geckomat/get_enzyme_data/getECfromDatabase_kegg.m
-cp Scripts/InstallationScripts/getECfromDatabase_uniprot.m ${gecko_dir}/src/geckomat/get_enzyme_data/getECfromDatabase_uniprot.m
-cp Scripts/InstallationScripts/loadConventionalGEM.m ${gecko_dir}/src/geckomat/utilities/loadConventionalGEM.m
-cp Scripts/InstallationScripts/makeEcModel.m ${gecko_dir}/src/geckomat/change_model/makeEcModel.m
-```
+3. Set the paths of RAVEN, GECKO and Gurobi under `matlab:` in `ENCORE_config.yaml` (leave them empty if the toolboxes are already on the MATLAB path).
 
 ## 🚀 Running ENCORE
 #### Clone the repository
 ```bash
-git clone https://github.com/yourusername/ENCORE.git
+git clone https://github.com/XinmengLiao/ENCORE.git
 cd ENCORE
 ```
 
-#### Make the pipeline script executable
-```bash
-chmod +x ENCORE.sh
-```
+#### Edit the configuration file
+`ENCORE_config.yaml` sets the paths of the conda environments (`envs:`), the GTDB-Tk reference data (`path: gtdbtk`), the MATLAB toolboxes (`matlab:`), the number of threads of each tool (`cores:`) and the tool parameters (`params:`). Paths of scripts and data in the config are relative to the folder of the config file.
+
 <br>
 
 # Usage
 ```bash
-bash ENCORE.sh [OPTIONS]
+bash ENCORE.sh -o <output_dir> -c <name> -d <data_folder> [OPTIONS] <modules>
 ```
 
 ### ✨ Required arguments
 - `-o, --output-dir` : Output directory for results  
-- `-c, --cohort` : Cohort/sample prefix
-- `-d, --data-folder` : Input data folder containing raw sequencing reads (default: `Toy_Dataset`)
+- `-c, --cohort` : Name of the run
+- `-d, --data-folder` : Folder with the raw reads, one sub-folder per sample: `<sample>/<sample>_R1.fastq.gz` and `<sample>/<sample>_R2.fastq.gz`
 
 ### ✨ Optional arguments
-- `-s, --scripts-dir` : Directory containing all scripts (default: `Scripts/`)  
-- `-t, --threads` : Number of CPU cores to use (default: 1)
-- `--dry-run` : Perform a dry run without executing workflows
-- `-q, --quiet` : Run in quiet mode with minimal output
+- `-t, --cores` : Maximum number of CPU cores used by Snakemake (default: 1). The threads of each tool are set under `cores:` in `ENCORE_config.yaml`
+- `-s, --scripts-dir` : Directory containing all scripts (default: `Scripts/` of this repository)  
+- `-n, --dry-run` : Show what would be run without executing
+- `-k, --keep-incomplete` : Keep incomplete output files of failed jobs
+- `-l, --list` : List all modules
 - `-h, --help` : Show help message  
+
+### ✨ Reporter options (`--reporter`)
+- `--metadata` : Sample metadata (required), tab-separated, the first column is the sample ID
+- `--fixed-effect` : Metadata column with the two groups compared (default: `Group`); extra covariates comma separated, e.g. `Group,Age`
+- `--random-effect` : Metadata column for paired / repeated samples, e.g. `subject` (default: none)
+- `--checkm` : Bin quality table (`Sample`, `bin`, `completeness`, `contamination`); keeps bins with completeness > 70 and contamination < 10 (default: no filtering)
 
 ### ✨ Available modules
 
-#### Full pipeline
-- `--metagenome` : Run all metagenome analysis modules (quality, trim, assembly, crossmap, maxbin, concoct, metabat, refinement, reassembly, abundance, taxonomy)
-- `--metabolic` : Run all metabolic modeling modules (extraction, gem, ecgem)
-- `--reporter` : Run reporter metabolite analysis (network, reporter)
+#### Workflow groups
+- `--preprocessing` : quality, trim, assembly
+- `--downstream` : crossmap, maxbin, concoct, metabat, refinement, reassembly, abundance, extraction, taxonomy, gem, ecgem
+- `--all` : `--preprocessing`, `--downstream` and `--fva` (from raw reads to the mandatory exchange reactions of the ecGEMs)
 
 #### Metagenome Quality Control & Assembly
 - `--quality` : FastQC - Read quality check  
@@ -124,37 +124,45 @@ bash ENCORE.sh [OPTIONS]
 - `--crossmap` : Prepare depth files for binning using BWA mapping and JGI scripts
 - `--maxbin` : MaxBin2 - Binning algorithm for genome recovery
 - `--concoct` : CONCOCT - Co-assembly clustering algorithm for binning
-- `--metabat` : MetaBat2 - Metagenome binning tool
+- `--metabat` : MetaBAT2 - Metagenome binning tool
 
 #### Genome & Abundance Analysis
 - `--refinement` : metaWRAP - Refine bins from multiple binning methods
 - `--reassembly` : metaWRAP - Reassemble refined bins with original reads
+- `--abundance` : Calculate bin abundance from read mapping (bwa, samtools)
 - `--extraction` : Extract genomic (DNA) and proteomic (protein) sequences from bins
-- `--abundance` : Calculate bin abundance fractions from read mapping
+- `--taxonomy` : GTDB-Tk - Taxonomic classification of MAGs to species level (after `--extraction`)
 
-#### Taxonomic Classification & Modeling
-- `--taxonomy` : GTDB-Tk - Taxonomic classification of MAGs to species level
+#### Metabolic Modeling
 - `--gem` : CarveMe - Reconstruction of genome-scale metabolic models (GEMs)
-- `--ecgem` : GECKO 3.0 - Reconstruction of enzyme-constrained GEMs (ecGEMs)
+- `--ecgem` : GECKO 3.0 - Reconstruction of enzyme-constrained GEMs (ecGEMs) and FVA of their exchange reactions (runs MATLAB in batch mode)
 
 #### Community Metabolic Analysis
-- `--network` : Construct microbial community ecGEM metabolic networks
-- `--reporter` : Identify reporter metabolites in community models
+- `--fva` : Copy the FVA results to `<output>/fva/` and combine the mandatory exchange reactions of all samples and bins into `<output>/fva/fva_mandatory_exchange.txt`
+- `--reporter` : Differential abundance analysis (MaAsLin2), microbe-metabolite network and reporter metabolites (`Scripts/RScripts/DAA_RM.R`), written to `<output>/reporter_metabolite/`
 
 ### ✨ Examples
 
 ```bash
-# Run the single module with 8 jobs at the same time
-bash ENCORE.sh -o ./results -c test -d my_reads -t 8 --metagenome
+# From raw reads to the mandatory exchange reactions of the ecGEMs
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset -t 16 --all
 
 # Run multiple modules
-bash ENCORE.sh -o ./results -c test -d my_reads -t 4 --quality --trim
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset -t 4 --quality --trim
 
 # Perform a dry run to check the workflow before execution
-bash ENCORE.sh -o ./results -c test -d my_reads --dry-run --metagenome
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --dry-run --preprocessing
 
-# Run the complete analysis pipeline with all modules
-bash ENCORE.sh -o ./results -c test -d my_reads -t 16 --metagenome --metabolic --reporter
+# DAA, microbe-metabolite network and reporter metabolites
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --reporter \
+    --metadata metadata.tsv --fixed-effect Group --random-effect subject
 ```
 
-### More details of functions and modules: [ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md)
+### 🧪 Toy dataset
+The toy dataset (three samples, ~7 GB of paired-end reads) is too large for GitHub. Download it from [TODO: add the Zenodo link] and unzip it into `Example/Toy_Dataset/`.
+
+### 📖 Detailed tutorial: 
+More detailed functions and usage illustrating with the toy datasets could be found in [ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md). The runtime of each step on the toy dataset is summarized in [ENCORE_toy_data_runtime](https://github.com/XinmengLiao/ENCORE/blob/main/Example/ENCORE_toy_data_runtime.md).
+
+# License
+ENCORE is released under the [MIT License](LICENSE).

@@ -18,6 +18,33 @@ root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path'
 if not os.path.isabs(root_path):
     root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
 
+# Paths of scripts and data in the config are relative to the config file folder (passed by ENCORE.sh)
+CONFIG_DIR = config.get('CONFIG_DIR') or os.path.dirname(os.path.dirname(workflow.basedir))
+
+def config_path(value):
+    """Config value as a path: expand ~, resolve relative to the config folder ('' if empty)"""
+    if not value:
+        return ''
+    value = os.path.expanduser(str(value).strip('"\''))
+    return value if os.path.isabs(value) else os.path.normpath(os.path.join(CONFIG_DIR, value))
+
+def matlab_str(value):
+    return value.replace("'", "''")
+
+# MATLAB commands run before meta-gecko.m: toolboxes from 'matlab:' in the config, then ENCORE's
+# versions of loadConventionalGEM, makeEcModel, fuzzyKcatMatching, getECfromDatabase_* on top of
+# the path (used instead of the GECKO originals), and the docker location for DLKcat
+matlab_cfg = config.get('matlab') or {}
+MATLAB_INIT = []
+for key in ['raven', 'gecko']:
+    if config_path(matlab_cfg.get(key)):
+        MATLAB_INIT.append(f"addpath(genpath('{matlab_str(config_path(matlab_cfg.get(key)))}'));")
+if config_path(matlab_cfg.get('gurobi')):
+    MATLAB_INIT.append(f"addpath('{matlab_str(config_path(matlab_cfg.get('gurobi')))}');")
+MATLAB_INIT.append(f"addpath('{matlab_str(os.path.join(os.path.dirname(workflow.basedir), 'InstallationScripts'))}');")
+MATLAB_INIT.append("setenv('PATH', [getenv('PATH') ':/usr/local/bin:/opt/homebrew/bin:/Applications/Docker.app/Contents/Resources/bin']);")
+MATLAB_INIT = "\n".join(MATLAB_INIT)
+
 assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
 print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
 SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
@@ -38,16 +65,16 @@ rule ecGEM:
     output:
         directory(f"{root_path}/{config['folder']['ecGEMs']}/{{sampleID}}")
     params:
-        scratch_dir = f"{root_path}/{config['path']['scratch']}/{config['folder']['ecGEMs']}",
-        uniprotid_file = os.path.join(os.path.dirname(workflow.basedir), config['DataforScripts'].get('UniprotID', 'UniprotID.txt')),
-        kegg_file = os.path.join(os.path.dirname(workflow.basedir), config['DataforScripts'].get('kegg', 'kegglist.txt')),
-        taxonomy_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['Rscripts']['taxonomy']),
+        uniprotid_file = config_path(config['DataforScripts']['UniprotID']),
+        kegg_file = config_path(config['DataforScripts']['kegg']),
+        taxonomy_script = config_path(config['Rscripts']['taxonomy']),
         proteinbins_path = f"{root_path}/{config['folder']['proteinBins']}",
         gems_path = f"{root_path}/{config['folder']['GEMs']}",
         classification_path = f"{root_path}/{config['folder']['classification']}",
-        makeecgem_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['MatlabScripts']['makeECGEM']),
-        extractmet_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['MatlabScripts']['extractMet']),
-        adaptertemplate_script = os.path.join(os.path.dirname(os.path.dirname(workflow.basedir)), config['MatlabScripts']['adaptertemplate'])
+        makeecgem_script = config_path(config['MatlabScripts']['makeECGEM']),
+        extractmet_script = config_path(config['MatlabScripts']['extractMet']),
+        adaptertemplate_script = config_path(config['MatlabScripts']['adaptertemplate']),
+        matlab_init = MATLAB_INIT
     benchmark:
         f"{root_path}/{config['folder']['benchmarks']}/{{sampleID}}.ecgem.benchmark.txt"
     log:
@@ -60,97 +87,96 @@ rule ecGEM:
         mkdir -p {output}
         cd {output}
 
+        # Escape a value for the replacement part of a sed s||| command
+        sed_escape() {{ printf '%s' "$1" | sed -e 's/[\\\\&|]/\\\\&/g'; }}
+
         # Extract taxonomic information
-        cp {params.uniprotid_file} ./
+        cp "{params.uniprotid_file}" ./UniprotID.txt
         cp {params.classification_path}/${{idvar}}/${{idvar}}_gtdbtk_summary.tsv ./
-        cp {params.kegg_file} ./
+        cp "{params.kegg_file}" ./kegglist.txt
         
-        Rscript {params.taxonomy_script}
+        Rscript "{params.taxonomy_script}"
+
+        # copy the matlab files into the sample folder
+        cp "{params.makeecgem_script}" ./meta-gecko.m
+        cp "{params.extractmet_script}" ./meta-gecko-extractMet.m
         
         # Only copy the files with existing taxonomic information
         awk 'NR>1 {{print $1}}' taxonomy.txt | while read bin; do
-            mkdir -p $bin/
-            
+            if [[ ! -f {params.gems_path}/${{idvar}}/$bin.xml || ! -f {params.proteinbins_path}/${{idvar}}/$bin.faa ]]; then
+                echo "$bin: GEM or protein file missing, skipped"
+                continue
+            fi
+
             for folder in 'code' 'data' 'models' 'output'; do 
                 mkdir -p $bin/$folder;
             done
 
             cp {params.gems_path}/${{idvar}}/$bin.xml $bin/models/
             cp {params.proteinbins_path}/${{idvar}}/$bin.faa $bin/
-            awk '/>/ {{name = $0; gsub(/>/,"",name); gsub(" #.*","",name); gsub (/[-.]/,"_",name) ; next}} {{print name"\t"$0}} ' $bin/$bin.faa > $bin/$bin.faa.txt;
+            # gene<TAB>full sequence, one row per gene (the .faa is line-wrapped, so join all sequence lines of a protein)
+            awk '/>/ {{if (name != "") print name"\\t"seq; name = $0; gsub(/>/,"",name); gsub(" #.*","",name); gsub (/[-.]/,"_",name); seq = ""; next}} {{gsub(/[ \\t\\r]/,"",$0); seq = seq $0}} END {{if (name != "") print name"\\t"seq}}' $bin/$bin.faa > $bin/$bin.faa.txt;
 
-            # copy the matlab files into each bin folder
-            cp {params.makeecgem_script} ./
-            cp {params.extractmet_script} ./
-            cp {params.adaptertemplate_script} $bin/
+            #manage the adapter template file, class name = bin name without dots, e.g. bin.1.s -> bin1secGECKOAdapter
+            AdapterFileName=$(echo "$bin" | sed 's/\\.//g')ecGECKOAdapter
+            cp "{params.adaptertemplate_script}" $bin/$AdapterFileName.m
 
-            #manage the adapter template file
-            AdapterFileName=$(echo "$bin" | sed 's/\.//g')ecGECKOAdapter
-            mv $bin/adapterTemplate.m $bin/$AdapterFileName.m
-
-            protID=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $2}}' taxonomy.txt)
-            echo "Uniprot ID:"
-            echo $protID
-            ncbiID=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $3}}' taxonomy.txt)
-            echo "NCBI ID:"
-            echo $ncbiID
-            species=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $6}}' taxonomy.txt)
-            echo "Species: "
-            echo $species
-            keggorg=$(awk -F '\\t' -v genome="$bin" '$0 ~ genome {{print $4}}' taxonomy.txt)
-            echo "KEGG org: "
-            echo $keggorg
+            # exact match on the bin column of taxonomy.txt
+            protID=$(awk -F '\\t' -v genome="$bin" '$1 == genome {{print $2; exit}}' taxonomy.txt)
+            echo "Uniprot ID: $protID"
+            ncbiID=$(awk -F '\\t' -v genome="$bin" '$1 == genome {{print $3; exit}}' taxonomy.txt)
+            echo "NCBI ID: $ncbiID"
+            species=$(awk -F '\\t' -v genome="$bin" '$1 == genome {{print $6; exit}}' taxonomy.txt)
+            echo "Species: $species"
+            keggorg=$(awk -F '\\t' -v genome="$bin" '$1 == genome {{print $4; exit}}' taxonomy.txt)
+            echo "KEGG org: $keggorg"
 
             currentpath=$(pwd)
-            params_path=$(echo "fullfile('$currentpath', '$bin')")
-
-            cd $bin
-            pwd
 
             sed -i.bak "
-                /classdef/s/classdef.*/classdef ${{AdapterFileName}} < ModelAdapter/;
-                /function obj =/s/function obj.*/function obj = ${{AdapterFileName}}()/;
-                /obj.params.path/s|obj.params.path.*|obj.params.path = fullfile('${{currentpath}}', '${{bin}}');|;
-                /obj.params.uniprot.type/s/obj.params.uniprot.type.*/obj.params.uniprot.type = 'proteome';/;
-                /obj.params.complex.taxonomicID/s/obj.params.complex.taxonomicID.*/obj.params.complex.taxonomicID = '${{ncbiID}}';/;
-                /obj.params.uniprot.ID/s/obj.params.uniprot.ID.*/obj.params.uniprot.ID = '${{protID}}';/;
+                /classdef/s|classdef.*|classdef ${{AdapterFileName}} < ModelAdapter|;
+                /function obj =/s|function obj.*|function obj = ${{AdapterFileName}}()|;
+                /obj.params.path/s|obj.params.path.*|obj.params.path = fullfile('$(sed_escape "$currentpath")', '${{bin}}');|;
+                /obj.params.uniprot.type/s|obj.params.uniprot.type.*|obj.params.uniprot.type = 'proteome';|;
+                /obj.params.complex.taxonomicID/s|obj.params.complex.taxonomicID.*|obj.params.complex.taxonomicID = '$(sed_escape "$ncbiID")';|;
+                /obj.params.uniprot.ID/s|obj.params.uniprot.ID.*|obj.params.uniprot.ID = '$(sed_escape "$protID")';|;
                 /obj.params.convGEM/s|obj.params.convGEM.*|obj.params.convGEM = fullfile(obj.params.path, 'models', '${{bin}}.xml');|;
-                /obj.params.org_name/s/obj.params.org_name.*/obj.params.org_name = '${{species}}';/;
-                /obj.params.uniprot.reviewed/s/obj.params.uniprot.reviewed.*/obj.params.uniprot.reviewed = false;/;
-                /obj.params.kegg.ID/s/obj.params.kegg.ID.*/obj.params.kegg.ID = '${{keggorg}}';/;
-                /obj.params.enzyme_comp/s/obj.params.enzyme_comp.*/obj.params.enzyme_comp = 'cytosol';/
-            " ${{AdapterFileName}}.m
+                /obj.params.org_name/s|obj.params.org_name.*|obj.params.org_name = '$(sed_escape "$species")';|;
+                /obj.params.uniprot.reviewed/s|obj.params.uniprot.reviewed.*|obj.params.uniprot.reviewed = false;|;
+                /obj.params.kegg.ID/s|obj.params.kegg.ID.*|obj.params.kegg.ID = '$(sed_escape "$keggorg")';|;
+                /obj.params.enzyme_comp/s|obj.params.enzyme_comp.*|obj.params.enzyme_comp = 'cytosol';|
+            " $bin/${{AdapterFileName}}.m
 
-            rm ${{AdapterFileName}}.m.bak
-
-            cd ../
+            rm $bin/${{AdapterFileName}}.m.bak
 
         done
 
         # Run make-gecko
         cd {output}
-        ecGEMpath=$(echo $(dirname $(pwd))/$idvar)
-        GEMpath=$(echo $(dirname $(dirname $ecGEMpath))/GEMs/$idvar)
+        ecGEMpath=$(pwd)
+        GEMpath={params.gems_path}/$idvar
         sensitivityValue={config[params][FVAsensitivity]}
         
         echo $GEMpath
         echo $ecGEMpath
 
         sed -i.bak "
-            /GEMpath =/s|GEMpath =.*|GEMpath = '${{GEMpath}}';|;
-            /ecGEMpath =/s|ecGEMpath =.*|ecGEMpath = '${{ecGEMpath}}';|;
+            /GEMpath =/s|GEMpath =.*|GEMpath = '$(sed_escape "$GEMpath")';|;
+            /ecGEMpath =/s|ecGEMpath =.*|ecGEMpath = '$(sed_escape "$ecGEMpath")';|;
         " meta-gecko-extractMet.m
 
         sed -i.bak "
-            /GEMpath =/s|GEMpath =.*|GEMpath = '${{GEMpath}}';|;
-            /ecGEMpath =/s|ecGEMpath =.*|ecGEMpath = '${{ecGEMpath}}';|;
+            /GEMpath =/s|GEMpath =.*|GEMpath = '$(sed_escape "$GEMpath")';|;
+            /ecGEMpath =/s|ecGEMpath =.*|ecGEMpath = '$(sed_escape "$ecGEMpath")';|;
             /sensitivity =/s|sensitivity =.*|sensitivity = ${{sensitivityValue}};|;
         " meta-gecko.m
 
         rm meta-gecko.m.bak
         rm meta-gecko-extractMet.m.bak
 
-        matlab -nodisplay -nosplash -nodesktop -logfile matlab.log/$idvar.txt < meta-gecko.m
+        # toolbox paths (config 'matlab:') and ENCORE's GECKO functions, then meta-gecko.m
+        printf '%s\\n' "{params.matlab_init}" > encore_matlab_init.m
+        cat encore_matlab_init.m meta-gecko.m | matlab -nodisplay -nosplash -nodesktop -logfile matlab.log
 
         echo -e "ecGECKO models have been generated for $idvar at $(date)\\nSection ends\\n"
         """

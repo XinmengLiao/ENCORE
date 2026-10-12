@@ -1,9 +1,8 @@
 path:
-    root: ENCORE/
+    root: output
     scratch: scratch
     scripts: Scripts
     gtdbtk: [path/to/gtdbtk]
-    mmnetwork_file: [path/to/mmnetworks.tsv]
 folder:
     logs: logs
     benchmarks: benchmarks
@@ -22,34 +21,23 @@ folder:
     dnaBins: dna_bins
     GEMs: GEMs
     ecGEMs: ecGEMs
+    fva: fva
     stats: stats
-    network: mmnetwork
     reporter: reporter_metabolite
 DataforScripts:
-    assemblyVis: DataforScripts/assemblyVis.R
-    binningVis: DataforScripts/binningVis.R
-    modelVis: DataforScripts/modelVis.R
-    compositionVis: DataforScripts/compositionVis.R
-    carveme: DataforScripts/media_db.tsv
-    UniprotID: DataforScripts/UniprotID.txt
-    kegg: DataforScripts/kegglist.txt
+    carveme: Scripts/DataforScripts/media_db.tsv
+    UniprotID: Scripts/DataforScripts/UniprotID.txt
+    kegg: Scripts/DataforScripts/kegglist.txt
 PythonScripts:
-    kallisto2concoct: Scripts/PythonScripts/kallisto2concoct.py
-    binFilter: Scripts/PythonScripts/binFilter.py
     adjust_coverage: Scripts/PythonScripts/adjust_coverage.py
 MatlabScripts:
-    createECGEM: Scripts/MATLABScripts/CreateECModel.m
     makeECGEM: Scripts/MATLABScripts/meta-gecko.m
+    extractMet: Scripts/MATLABScripts/meta-gecko-extractMet.m
     adaptertemplate: Scripts/MATLABScripts/adapterTemplate.m
 Rscripts:
-    assemblyVis: Scripts/RScripts/assemblyVis.R
-    binningVis: Scripts/RScripts/binningVis.R
     modelVis: Scripts/RScripts/modelVis.R
-    compositionVis: Scripts/RScripts/compositionVis.R
     taxonomy: Scripts/RScripts/taxonomy.R
-    correctMetName: Scripts/RScripts/correctMetName.R
-    identifyRM: Scripts/RScripts/identifyRM.R
-    createMMNetwork: Scripts/RScripts/createMMNetwork.R
+    DAA_RM: Scripts/RScripts/DAA_RM.R
 cores:
     fastp: 16 
     megahit: 64
@@ -93,6 +81,10 @@ params:
     roaryI: 90
     roaryCD: 90
     FVAsensitivity: 0.95
+matlab: # toolboxes added to the MATLAB path by --ecgem (leave empty if already on the path)
+    raven:
+    gecko:
+    gurobi:
 envs:
     metagem: [path/to/metagem_env]
     metawrap: [path/to/metawrap_env]

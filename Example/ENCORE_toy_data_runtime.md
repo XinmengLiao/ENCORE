@@ -1,3 +1,11 @@
+# ENCORE runtime on the toy dataset
+
+This file only summarizes the specific steps, commands, and running time of the major part of ENCORE, from the raw metagenomic sequencing reads (quality control and assembly) to the ecGEM reconstruction (Step1 to Step11). Each step was run on the three toy samples (Sample1, Sample2 and Sample3), with the threads per sample listed in each table.
+
+## Preparation
+Download toy datasets
+
+
 ## Step1 fastqc
 
 | Sample | R1 file size (GB) | R2 file size (GB) | Threads per sample | FastQC runtime (min) |
@@ -74,21 +82,18 @@ This step could be finished in around 1min per sample.
 | Sample2 | 39 | 1 | ~1.5 | 39 |
 | Sample3 | 59 | 1 | ~3 | 59 |
 
-Each sample was run as one job, and its bins were carved one after another. CarveMe uses a single thread (the CPU time Slurm recorded matches the wall-clock time, so about 1 core was busy). The `cores: carveme: 16` setting was not applied in this run. Slurm allocated a whole node (256 CPUs) to each job, but only about 1 core was used.
+## Step10 ecGEM reconstruction and mandatory exchange reaction identification (GECKO 3.0)
+For each bin, ecGEM is reconstructed based on the corresponding GEM. Enzyme constraints are firstly added into the model. Flux balance analysis and flux variability analysis are further performed on the ecGEM to optimize the growth rate and predict the flux range for each exchange reaction under the optimal growth rate. 
+The running time for each bin with 1 threads is around 2 mins with the pre-build SMILES inhouse database. The most time consuming process is querying SMILES from PubChem via API. 
 
-## Summary of total runtime
+## Step11 Abundance calculation
 
-| Step | Threads per sample | Sample1 | Sample2 | Sample3 |
-|:---|---:|---:|---:|---:|
-| Step1 FastQC | 1 | ~2.9 min | ~4.3 min | ~6.9 min |
-| Step2 fastp | 16 | ~0.6 min | ~0.9 min | ~1.6 min |
-| Step3 Assembly (MEGAHIT) | 128 | ~2 h | ~3 h | ~4 h |
-| Step4 Cross-mapping | 128 | ~21 min | ~24 min | ~30 min |
-| Step5 Binning (3 binners, summed) | 16 | ~7 min | ~9 min | ~23 min |
-| Step6 Bin refinement (16 threads) + reassembly (128 threads) | 16 / 128 | ~64 min + ~5 h | ~62 min + ~8 h | ~70 min + ~13.5 h |
-| Step7 Extraction (protein + DNA) | 1 | ~1 min | ~1 min | ~1 min |
-| Step8 Classification (GTDB-Tk) | 16 | ~3.1 min | ~3.0 min | ~2.9 min |
-| Step9 GEM reconstruction (CarveMe) | 1 | ~1 h (27 GEMs) | ~1.5 h (39 GEMs) | ~3 h (59 GEMs) |
-| **Total (approx.)** | | **~9.6 h** | **~14.2 h** | **~22.7 h** |
+| Sample | Bins | Threads per sample | Abundance runtime (h) |
+|:---|---:|---:|---:|
+| Sample1 | 27 | 128 | ~1 |
+| Sample2 | 39 | 128 | ~2 |
+| Sample3 | 59 | 128 | ~4.5 |
 
-Note: binning time assumes the three binners run sequentially.
+
+## Downstream analysis
+Running times are not summarized since downstream analyses depend on user-defined parameters and thresholds. These steps are generally fast and can be run using `bash ENCORE.sh --<function>` (e.g., `bash ENCORE.sh --fva` or `bash ENCORE.sh --reporter`).

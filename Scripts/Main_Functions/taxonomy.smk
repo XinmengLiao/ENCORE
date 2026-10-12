@@ -52,8 +52,6 @@ rule GTDBtk:
         mkdir -p {output}
 
         # need to set the path and other parameters before running gtdbtk
-        #export PYTHONPATH=/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/envs/metagem/lib/python3.12/site-packages:$PYTHONPATH
-        #export PATH=/cfs/klemming/projects/snic/naiss2023-23-637/ecgem/envs/metagem/bin:$PATH
 
         cd {input}
 

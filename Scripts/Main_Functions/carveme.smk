@@ -18,6 +18,9 @@ root_path = config.get('path_root') or config.get('OUTPUT_DIR') or config['path'
 if not os.path.isabs(root_path):
     root_path = os.path.join(os.path.dirname(workflow.basedir), root_path)
 
+# Paths of scripts and data in the config are relative to the config file folder (passed by ENCORE.sh)
+CONFIG_DIR = config.get('CONFIG_DIR') or os.path.dirname(os.path.dirname(workflow.basedir))
+
 assemblies_pattern = f"{root_path}/{config['folder']['assemblies']}/*"
 print(f"DEBUG: Looking for samples in: {assemblies_pattern}")
 SAMPLE_INDEX = get_sampleids_from_path_pattern(assemblies_pattern)
@@ -59,8 +62,7 @@ rule carveme:
         cd {params.scratch_dir}/${{idvar}}
 
         cp {input.bin}/* ./
-        medie_file=$(echo $(dirname {root_path})/{config[path][scripts]}/{config[DataforScripts][carveme]})
-        cp $medie_file ./
+        cp "{CONFIG_DIR}/{config[DataforScripts][carveme]}" ./
 
         for name in *.faa; do
             binID=$(echo $name | sed 's/.faa//g')
@@ -93,7 +95,7 @@ rule carveme:
         mkdir -p {root_path}/{config[folder][stats]}/${{idvar}}
         mv GEMs.stats {root_path}/{config[folder][stats]}/${{idvar}}
         cd {root_path}/{config[folder][stats]}/${{idvar}}
-        Rscript $(dirname {root_path})/{config[Rscripts][modelVis]}
+        Rscript "{CONFIG_DIR}/{config[Rscripts][modelVis]}"
         echo "GEMs statistic checking done at $(date)."
         """
 

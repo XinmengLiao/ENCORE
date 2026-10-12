@@ -3,25 +3,31 @@
 ## Overview
 
 This directory contains all ENCORE individual modules that can be executed standalone or as part of integrated pipelines.
+The examples below run from the `Example/` folder, which has its own `ENCORE.sh` and `ENCORE_config.yaml`.
 
 ## Available Datasets
 
 The pipeline includes a toy dataset for testing and validation:
-- **Input Dataset**: `Toy_Dataset` (containing Sample1, Sample2, Sample3)
-- **Location**: Root directory of ENCORE
+- **Input Dataset**: `Toy_Dataset` (three samples: Sample1, Sample2, Sample3, one sub-folder per sample with `<sample>_R1.fastq.gz` and `<sample>_R2.fastq.gz`)
+- **Location**: `Example/Toy_Dataset` (the reads are not stored on GitHub because of their size, see the main README for the download link)
+
+## Conda environments
+
+The modules run in the `metagem` conda environment. The metaWRAP modules (`--refinement`, `--reassembly`) run in the `metawrap` environment, which `ENCORE.sh` stacks on top automatically when its path is set under `envs:` and `module_envs:` in `ENCORE_config.yaml`. Otherwise, activate it yourself with `conda activate --stack metawrap`.
 
 ## Quick Start Examples
 
-### Running the Complete Pipeline
+### From raw reads to the mandatory exchange reactions
 
-Execute all steps from quality control to reporter metabolite analysis:
+Execute all steps from quality control to the ecGEMs and their FVA results:
 
 ```bash
 conda activate metagem
-conda activate --stack metawrap
 
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --all
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --all
 ```
+
+Then run `--reporter` with the sample metadata (Step 14).
 
 ### Running Joint Modules
 
@@ -30,24 +36,15 @@ Executes: Quality Check → Trimming → Assembly
 ```bash
 conda activate metagem
 
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --preprocessing
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --preprocessing
 ```
 
 #### Downstream Analysis
-Executes: Crossmapping → Binning (MaxBin2/MetaBat2/CONCOCT) → Refinement → Reassembly → Extraction → Metabolic Modeling
+Executes: Crossmapping → Binning (MaxBin2/MetaBAT2/CONCOCT) → Refinement → Reassembly → Abundance → Extraction → Taxonomy → GEMs → ecGEMs
 ```bash
 conda activate metagem
-conda activate --stack metawrap
 
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --downstream
-```
-
-#### Preprocessing to Downstream Analysis
-```bash
-conda activate metagem
-conda activate --stack metawrap
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --preprocessing --crossmap --downstream
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --downstream
 ```
 
 ---
@@ -60,27 +57,21 @@ bash ENCORE.sh -o ./output -c test -d Toy_Dataset --preprocessing --crossmap --d
 Analyze read quality metrics using FastQC.
 
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --quality
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --quality
 ```
 
 #### Step 2: Trim Sequences
 Filter and trim low-quality reads using fastp.
 
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --trim
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --trim
 ```
 
 #### Step 3: Assembly to Contigs
 Assemble trimmed reads into contigs using MEGAHIT.
 
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --assembly
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --assembly
 ```
 ---
 
@@ -89,124 +80,119 @@ Prepare depth files for binning by mapping all samples to the assembly.
 > **Important**: Complete Steps 1-3 before running crossmapping, as it requires assembled contigs from all samples.
 
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --crossmap
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --crossmap
 ```
 
 ---
 
-### Stage 3: Binning and Reconstructing ecGEMs (Downstream Analysis)
+### Stage 3: Binning, Abundance and Taxonomy
 Choose one or more binning algorithms. These steps can be run in parallel:
 #### Step 5.1: Binning with MaxBin2
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --maxbin
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --maxbin
 ```
 
-#### Step 5.2: Binning with MetaBat2
+#### Step 5.2: Binning with MetaBAT2
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --metabat
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --metabat
 ```
 
 #### Step 5.3: Binning with CONCOCT
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --concoct
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --concoct
 ```
 
 #### Step 6: Bin Refinement
 Refine and improve bin quality using metaWRAP.
 ```bash
-conda activate metagem
-conda activate --stack metawrap
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --refinement
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --refinement
 ```
 
 #### Step 7: Bin Reassembly
 Reassemble refined bins to improve completeness.
 ```bash
-conda activate metagem
-conda activate --stack metawrap
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --reassembly
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --reassembly
 ```
 
-#### Step 8: Extract Genomic and Proteomic Sequences
-Extract genes and proteins from refined bins.
+#### Step 8: Calculate Bin Abundance
+Calculate the abundance of each reassembled bin by mapping the quality-filtered reads back to the bins (bwa and samtools).
+
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --extraction
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --abundance
 ```
 
-#### Step 9: Bin Taxonomy Classification
+#### Step 9: Extract Genomic and Proteomic Sequences
+Extract genes and proteins from the reassembled bins.
+```bash
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --extraction
+```
+
+#### Step 10: Bin Taxonomy Classification
 Assign taxonomic classifications to bins using GTDB-Tk.
+> **Important**: Run Step 9 first, GTDB-Tk reads the DNA sequences of the bins.
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --taxonomy
-```
-
-#### Step 10: Reconstruct Genome-Scale Metabolic Models (GEMs)
-Reconstruct metabolic models from genomic sequences using CarveMe.
-
-```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --gem --keep-incomplete
-```
-
-#### Step 11: Reconstruct Enzyme-Constrained GEMs (ecGEMs)
-Reconstruct enzyme-constrained genome-scale metabolic models from conventional models.
-
-```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --ecgem --keep-incomplete
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --taxonomy
 ```
 
 ---
 
-### Stage 4: Network Analysis & Reporter Metabolites
+### Stage 4: Metabolic Modeling
 
-#### Step 12: Calculate Bin Abundance
-Calculate the abundance of each reassembled bin by mapping the quality-filtered reads back to the bins (bwa and samtools).
-
-```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --abundance
-```
-
-#### Step 13: Create Microbe-Metabolite Network
-Construct microbial community ecological enzyme-constrained genome-scale metabolic models networks.
+#### Step 11: Reconstruct Genome-Scale Metabolic Models (GEMs)
+Reconstruct metabolic models from the protein sequences using CarveMe.
 
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c test -d Toy_Dataset --network
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --gem --keep-incomplete
 ```
 
-#### Step 14: Identify Reporter Metabolites
-Identify reporter metabolites from the community network.
+#### Step 12: Reconstruct Enzyme-Constrained GEMs (ecGEMs)
+Reconstruct enzyme-constrained genome-scale metabolic models from the GEMs with GECKO 3.0, and run flux variability analysis (FVA) on their exchange reactions.
+
+For each sample, `--ecgem` prepares one GECKO folder per bin in `output/ecGEMs/<sample>/` and runs `meta-gecko.m` in MATLAB batch mode:
+
+```bash
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --ecgem
+```
+
+It needs the `matlab` command on PATH, GECKO 3, RAVEN and Gurobi (paths under `matlab:` in `ENCORE_config.yaml`), Docker running (DLKcat) and internet access (UniProt, KEGG and PubChem). The MATLAB output of each sample is written to `output/ecGEMs/<sample>/matlab.log`. The FVA results of each bin are written to `output/ecGEMs/<sample>/<bin>/output/<sample>.<binID>FVA.txt`.
+
+---
+
+### Stage 5: Microbe-Metabolite Network & Reporter Metabolites
+
+#### Step 13: Collect the FVA Results
+Copy the FVA results of all bins to `output/fva/` and combine the mandatory exchange reactions (flux range does not include zero: `UB_exc < 0` Uptake, `LB_exc > 0` Secretion) of all samples and bins into `output/fva/fva_mandatory_exchange.txt`, with `Sample` and `Bin` columns.
+
+```bash
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --fva
+```
+
+#### Step 14: DAA, Microbe-Metabolite Network and Reporter Metabolites
+`--reporter` runs `Scripts/RScripts/DAA_RM.R`:
+1. Differential abundance analysis (DAA) of the species with MaAsLin2, on the relative abundance of the bins (Step 8) summed per species (Step 10)
+2. Microbe-metabolite network from the mandatory exchange reactions (Step 13)
+3. Directional reporter metabolites (PredCMB-style, with species in place of gene families), in the entire network and in the uptake subnetwork
+
 Required files:
-- Differential Abundance Analysis results. Please follow the recommended format, where the first column should be: 
-1) classification: the entire classfication generated from GTDB-tk;
-2) LogFC: log2-FoldChange
-3) PValue
-4) FDR: the false discovery rate
+- Sample metadata (`--metadata`): tab-separated, the first column is the sample ID (as in the data folder), plus the column with the two groups compared (`--fixed-effect`, default `Group`). For paired samples, add a column with the subject ID and set `--random-effect`.
+- Optional bin quality table (`--checkm`): columns `Sample`, `bin`, `completeness`, `contamination`. Only bins with completeness > 70 and contamination < 10 are kept.
 
 ```bash
-conda activate metagem
-
-bash ENCORE.sh -o ./output -c sample1 -d my_data --reporter --daa-file /path/to/daa_results.tsv
+bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --reporter \
+    --metadata metadata.tsv --fixed-effect Group --random-effect subject
 ```
+
+Results in `output/reporter_metabolite/`:
+
+| File | Content |
+|------|---------|
+| `daa.txt` | DAA results (`classification`, `logFC`, `PValue`, `FDR`) |
+| `maaslin2/` | MaAsLin2 output |
+| `taxoID.txt` | Species ID used in MaAsLin2 and its GTDB-Tk classification |
+| `MMNetwork.txt` | Microbe-metabolite network |
+| `reporter_metabolites.txt` | Reporter metabolites in the entire network |
+| `reporter_metabolites_uptake.txt` | Reporter metabolites in the uptake subnetwork |
+| `reporter_edge_scores.txt` | Signed Z-score of each microbe-metabolite edge |
 
 ---
 
@@ -217,18 +203,16 @@ bash ENCORE.sh -o ./output -c sample1 -d my_data --reporter --daa-file /path/to/
 | Quality Check | `fastqc.smk` | FastQC quality metrics |
 | Trimming | `fastp.smk` | Read quality filtering |
 | Assembly | `megahit.smk` | Contig assembly |
-| **Preprocessing** | `preprocessing.smk` | Integrated: Quality → Trim → Assembly |
 | Crossmapping | `crossmapping.smk` | Depth file preparation |
 | Binning (MaxBin2) | `maxbin.smk` | MaxBin2 binning |
 | Binning (CONCOCT) | `concoct.smk` | CONCOCT binning |
-| Binning (MetaBat2) | `metabat.smk` | MetaBat2 binning |
+| Binning (MetaBAT2) | `metabat.smk` | MetaBAT2 binning |
 | Refinement | `refinement.smk` | metaWRAP bin refinement |
 | Reassembly | `reassembly.smk` | metaWRAP bin reassembly |
 | Abundance | `AbundanceCalculation.smk` | Calculate bin abundances |
-| Taxonomy | `taxonomy.smk` | GTDB-Tk classification |
 | Extraction | `extraction.smk` | Gene/protein extraction |
+| Taxonomy | `taxonomy.smk` | GTDB-Tk classification |
 | GEM Reconstruction | `carveme.smk` | CarveMe GEM generation |
-| ecGEM Reconstruction | `GEMtoECGEM.smk` | Enzyme-constrained GEM generation |
-| **Downstream** | `downstream.smk` | Integrated: Crossmap → Binning → Refinement → Extraction → Metabolic |
-| Network Analysis | `CoGEMNetwork.smk` | Community network construction |
-| Reporter Metabolites | `ReporterMetabolite.smk` | Reporter metabolite identification |
+| ecGEM Reconstruction | `GEMtoECGEM.smk` + `Scripts/MATLABScripts/meta-gecko.m` | Enzyme-constrained GEMs and FVA of their exchange reactions |
+| FVA results | `ENCORE.sh` (bash) | Mandatory exchange reactions of all samples and bins |
+| Reporter Metabolites | `ENCORE.sh` (bash) + `Scripts/RScripts/DAA_RM.R` | DAA, microbe-metabolite network and reporter metabolites |
