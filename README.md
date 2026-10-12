@@ -106,7 +106,6 @@ bash ENCORE.sh -o <output_dir> -c <name> -d <data_folder> [OPTIONS] <modules>
 - `--metadata` : Sample metadata (required), tab-separated, the first column is the sample ID
 - `--fixed-effect` : Metadata column with the two groups compared (default: `Group`); extra covariates comma separated, e.g. `Group,Age`
 - `--random-effect` : Metadata column for paired / repeated samples, e.g. `subject` (default: none)
-- `--checkm` : Bin quality table (`Sample`, `bin`, `completeness`, `contamination`); keeps bins with completeness > 70 and contamination < 10 (default: no filtering)
 
 ### ✨ Available modules
 
@@ -162,7 +161,7 @@ bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --reporter \
 The toy dataset (three samples, ~7 GB of paired-end reads) is too large for GitHub. Download it from [TODO: add the Zenodo link] and unzip it into `Example/Toy_Dataset/`.
 
 ### 📖 Detailed tutorial: 
-More detailed functions and usage illustrating with the toy datasets could be found in [ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md). The runtime of each step on the toy dataset is summarized in [ENCORE_toy_data_runtime](https://github.com/XinmengLiao/ENCORE/blob/main/Example/ENCORE_toy_data_runtime.md).
+More detailed functions and usage illustrating with the toy datasets could be found in [ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md). The runtime of each step on the toy dataset is summarized in [Example/README.md](https://github.com/XinmengLiao/ENCORE/blob/main/Example/README.md).
 
 # License
 ENCORE is released under the [MIT License](LICENSE).

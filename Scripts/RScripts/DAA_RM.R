@@ -6,7 +6,7 @@ library(Maaslin2)
 # from the mandatory exchange reactions, and directional reporter metabolites (PredCMB-style)
 # Usage:
 #   Rscript DAA_RM.R <abundance_file> <taxo_dir> <metadata_file> <fva_file> <output_dir> \
-#                    [fixed_effect] [random_effect] [checkm_file]
+#                    [fixed_effect] [random_effect]
 #
 # abundance_file : tab-separated, columns Sample, Bin, Mapped_reads, Bin_length
 # taxo_dir       : folder with <sample>_gtdbtk_summary.tsv files from GTDB-Tk
@@ -17,8 +17,6 @@ library(Maaslin2)
 # fixed_effect   : metadata column compared between two groups (default: Group); more columns can be
 #                  added as covariates, comma separated, the first one is used for the reporter metabolites
 # random_effect  : metadata column(s) for repeated measures, e.g. subject for paired samples (default: NA)
-# checkm_file    : tab-separated, columns Sample, bin, completeness, contamination (default: NA, no filtering)
-#                  bins with completeness > 70 and contamination < 10 are kept
 #
 # Output in output_dir:
 #   maaslin2/                         MaAsLin2 output
@@ -37,7 +35,6 @@ fva_file <- sys.args[4]
 output_dir <- sys.args[5]
 fixed_effect <- ifelse(is.na(sys.args[6]), "Group", sys.args[6])
 random_effect <- ifelse(is.na(sys.args[7]), "NA", sys.args[7])
-checkm_file <- ifelse(is.na(sys.args[8]), "NA", sys.args[8])
 
 fixed_effect <- unlist(strsplit(fixed_effect, ","))
 random_effect <- if (random_effect == "NA") NULL else unlist(strsplit(random_effect, ","))
@@ -61,22 +58,16 @@ taxo.all <- taxo.all %>%
   mutate(user_genome = gsub("\\.","",user_genome)) %>%
   filter(grepl(";s__.+", classification))
 
-# read abundance and keep high quality bins
+# read abundance of all reassembled bins
 map.summary <- read.csv(abundance_file, header = T, sep = "\t") %>%
   mutate(user_genome = gsub("\\.","",Bin))
-if (checkm_file != "NA"){
-  checkm <- read.csv(checkm_file, header = T, sep = "\t") %>%
-    filter(completeness > 70 & contamination < 10) %>%
-    mutate(user_genome = gsub("\\.","",bin))
-  map.summary <- map.summary %>% semi_join(checkm, by = c("Sample", "user_genome"))
-}
 
 metadata <- read.csv(metadata_file, header = T, sep = "\t", check.names = F)
 colnames(metadata)[1] <- "Sample"
 map.summary <- map.summary %>% filter(Sample %in% metadata$Sample)
 print(paste0("Number of samples used for DAA: ", length(unique(map.summary$Sample))))
 
-# calculate the relative abundance after bin filtration, and sum bins of the same species
+# calculate the relative abundance, and sum bins of the same species
 abund <- map.summary %>%
   group_by(Sample) %>%
   mutate(Relative_abundance = (Mapped_reads / Bin_length) / sum(Mapped_reads / Bin_length, na.rm = TRUE)) %>%

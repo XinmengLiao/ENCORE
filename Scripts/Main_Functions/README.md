@@ -175,7 +175,6 @@ bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --fva
 
 Required files:
 - Sample metadata (`--metadata`): tab-separated, the first column is the sample ID (as in the data folder), plus the column with the two groups compared (`--fixed-effect`, default `Group`). For paired samples, add a column with the subject ID and set `--random-effect`.
-- Optional bin quality table (`--checkm`): columns `Sample`, `bin`, `completeness`, `contamination`. Only bins with completeness > 70 and contamination < 10 are kept.
 
 ```bash
 bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --reporter \

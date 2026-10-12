@@ -10,7 +10,6 @@ DATA_FOLDER=""
 METADATA_FILE=""
 FIXED_EFFECT="Group"
 RANDOM_EFFECT="NA"
-CHECKM_FILE="NA"
 SCRIPT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Scripts/ is next to this file (repository root) or one level up (Example/)
 if [[ -d "${SCRIPT_HOME}/Scripts" ]]; then
@@ -331,13 +330,12 @@ run_reporter_bash() {
 
     [[ -f "$daa_rm" ]] || { log_error "Rscripts: DAA_RM not found in $CONFIG_FILE: $daa_rm"; return 1; }
     [[ -f "$METADATA_FILE" ]] || { log_error "Metadata file not found: $METADATA_FILE (--metadata)"; return 1; }
-    [[ "$CHECKM_FILE" == "NA" || -f "$CHECKM_FILE" ]] || { log_error "CheckM file not found: $CHECKM_FILE (--checkm)"; return 1; }
     [[ -d "$abund_root" ]] || { log_error "Abundance folder not found: $abund_root (run --abundance first)"; return 1; }
     [[ -d "$taxo_root" ]] || { log_error "Taxonomy folder not found: $taxo_root (run --taxonomy first)"; return 1; }
     [[ -f "$fva_file" ]] || { log_error "FVA file not found: $fva_file (run --fva first)"; return 1; }
     command -v Rscript &> /dev/null || { log_error "Rscript is not installed or not in PATH"; return 1; }
 
-    log_info "Metadata: $METADATA_FILE (fixed effect: $FIXED_EFFECT, random effect: $RANDOM_EFFECT, CheckM: $CHECKM_FILE)"
+    log_info "Metadata: $METADATA_FILE (fixed effect: $FIXED_EFFECT, random effect: $RANDOM_EFFECT)"
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[dry-run] would run $daa_rm and write the results to $out_dir"
         return 0
@@ -364,7 +362,7 @@ run_reporter_bash() {
 
     log_info "Now running DAA, microbe-metabolite network and reporter metabolites ..."
     Rscript "$daa_rm" "$summary" "$out_dir/taxonomy" "$METADATA_FILE" "$fva_file" "$out_dir" \
-        "$FIXED_EFFECT" "$RANDOM_EFFECT" "$CHECKM_FILE" 2>&1 | tee "$out_dir/DAA_RM.Rlog"
+        "$FIXED_EFFECT" "$RANDOM_EFFECT" 2>&1 | tee "$out_dir/DAA_RM.Rlog"
     [[ ${PIPESTATUS[0]} -eq 0 ]] || { log_error "DAA_RM.R failed, see $out_dir/DAA_RM.Rlog"; return 1; }
 
     log_success "Reporter metabolites written to $out_dir"
@@ -457,8 +455,6 @@ REPORTER OPTIONS (--reporter):
   --fixed-effect <col>        Metadata column with the two groups compared (default: Group);
                               extra covariates comma separated, e.g. Group,Age
   --random-effect <col>       Metadata column for paired / repeated samples (default: none)
-  --checkm <file>             Bin quality (Sample, bin, completeness, contamination); keeps bins with
-                              completeness > 70 and contamination < 10 (default: no filtering)
 
 WORKFLOW GROUPS:
   --preprocessing   quality, trim, assembly
@@ -537,10 +533,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --random-effect)
             RANDOM_EFFECT="$2"
-            shift 2
-            ;;
-        --checkm)
-            CHECKM_FILE="$2"
             shift 2
             ;;
         -s|--scripts-dir)
