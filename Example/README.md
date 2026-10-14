@@ -96,4 +96,4 @@ The running time for each bin with 1 threads is around 2 mins with the pre-build
 
 
 ## Downstream analysis
-Running times are not summarized since downstream analyses depend on user-defined parameters and thresholds. These steps are generally fast and can be run using `bash ENCORE.sh --<function>` (e.g., `bash ENCORE.sh --fva` or `bash ENCORE.sh --reporter`).
+Running times are not summarized since downstream analyses depend on user-defined parameters and thresholds. These steps are generally fast and can be run using `bash ENCORE.sh --[function]` (e.g., `bash ENCORE.sh --fva` or `bash ENCORE.sh --reporter`).
