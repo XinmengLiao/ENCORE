@@ -5,6 +5,37 @@ This file only summarizes the specific steps, commands, and running time of the 
 ## Preparation
 Download toy datasets
 
+The toy dataset (paired-end reads of three samples, ~7.5 GB in total) is available on Zenodo: https://zenodo.org/records/23311537
+
+ENCORE expects one sub-folder per sample in the data folder (`-d/--data-folder`), with the reads kept gzipped:
+
+```
+Toy_Dataset/
+├── Sample1/
+│   ├── Sample1_R1.fastq.gz
+│   └── Sample1_R2.fastq.gz
+├── Sample2/
+│   ├── Sample2_R1.fastq.gz
+│   └── Sample2_R2.fastq.gz
+└── Sample3/
+    ├── Sample3_R1.fastq.gz
+    └── Sample3_R2.fastq.gz
+```
+
+```bash
+# Download the six read files into Toy_Dataset/<sample>/
+mkdir -p Toy_Dataset
+for sample in Sample1 Sample2 Sample3; do
+    mkdir -p Toy_Dataset/${sample}
+    for read in R1 R2; do
+        wget -c -O Toy_Dataset/${sample}/${sample}_${read}.fastq.gz \
+            "https://zenodo.org/records/23311537/files/${sample}_${read}.fastq.gz?download=1"
+    done
+done
+```
+
+The reads do not need to be decompressed: ENCORE reads the `.fastq.gz` files directly. To look at the reads, use e.g. `zcat Toy_Dataset/Sample1/Sample1_R1.fastq.gz | head -8`. Then run ENCORE with `-d ./Toy_Dataset`.
+
 
 ## Step1 fastqc
 

@@ -23,7 +23,8 @@ library(Maaslin2)
 #   taxoID.txt                        species ID used in MaAsLin2 and its GTDB-Tk classification
 #   daa.txt                           DAA results (classification, logFC, PValue, FDR)
 #   MMNetwork.txt                     microbe-metabolite network
-#   reporter_metabolites.txt          reporter metabolites in the entire network
+#   reporter_metabolites.txt          reporter metabolites in the entire network; null_status/degenerate_null
+#                                     mark metabolites whose significance cannot be tested (see section 3)
 #   reporter_metabolites_uptake.txt   reporter metabolites in the uptake subnetwork
 #   reporter_edge_scores.txt          signed Z-score of each microbe-metabolite edge (entire network)
 
@@ -183,8 +184,15 @@ write.table(network, file.path(output_dir, "MMNetwork.txt"), quote = F, sep = "\
 #   4. Metabolite score = sum(edge_Z) / k (mean), k = number of unique species linked to the metabolite
 #   5. For each metabolite, sample k unique background species n_sim times (no replacement),
 #      keeping its numbers of secretion and uptake edges
-#   6. Standardize the score with the null mean/sd, P from the sign-specific normal tail (p_corrected)
+#   6. Standardize the score with the null mean/sd, two-sided normal P (p_corrected), since both
+#      increased and decreased metabolites are reported as findings
 #   7. BH-FDR across metabolites; two-sided empirical permutation P/FDR reported as sensitivity result
+# Degenerate null (null_status = "degenerate_null"): a metabolite linked to all N background species
+# (k == N) with only uptake or only secretion edges. Every random draw is then the full background
+# with the same directions, so the null has no variance and its significance cannot be assessed
+# by this test. These metabolites keep their score, k and direction and stay in the network;
+# directional_Z_null_adjusted, p_corrected, p_empirical and the reported FDRs are NA, and they are
+# counted as P = 1 in the BH correction (p_for_BH, p_empirical_for_BH).
 rma.predcmb <- function(network, pvalue, logFC, reaction,
                         n_sim = 1000, seed = 42, max_abs_z = 7) {
 
@@ -242,21 +250,24 @@ rma.predcmb <- function(network, pvalue, logFC, reaction,
 
   # Step 4-6
   set.seed(seed)
+  n_background <- nrow(microbial_background)
   score_one <- function(edges) {
     k <- nrow(edges)
     n_secrete <- sum(edges$reaction_sign == 1)
     n_uptake <- sum(edges$reaction_sign == -1)
     direction_template <- c(rep(1, n_secrete), rep(-1, n_uptake))
     observed_z <- mean(edges$edge_Z)
+    degenerate <- k == n_background && (n_secrete == 0 || n_uptake == 0)
 
-    if (k > nrow(microbial_background)) {
-      return(tibble(
-        metabolite = edges$metabolite[1], k = k, n_secrete = n_secrete,
-        n_uptake = n_uptake, directional_Z_raw = observed_z,
-        null_mean = NA_real_, null_sd = NA_real_, directional_Z_null_adjusted = NA_real_,
-        p_corrected = NA_real_, p_empirical = NA_real_
-      ))
-    }
+    no_test <- tibble(
+      metabolite = edges$metabolite[1], k = k, n_background = n_background,
+      n_secrete = n_secrete, n_uptake = n_uptake, directional_Z_raw = observed_z,
+      null_mean = NA_real_, null_sd = NA_real_, directional_Z_null_adjusted = NA_real_,
+      p_corrected = NA_real_, p_empirical = NA_real_,
+      null_status = if (degenerate) "degenerate_null" else "not_tested"
+    )
+    # no null distribution: k larger than the background, or a degenerate (zero-variance) null
+    if (k > n_background || degenerate) return(no_test)
 
     null_scores <- replicate(n_sim, {
       sampled <- microbial_background %>% slice_sample(n = k, replace = FALSE)
@@ -265,36 +276,44 @@ rma.predcmb <- function(network, pvalue, logFC, reaction,
 
     null_mean <- mean(null_scores)
     null_sd <- sd(null_scores)
-    z_adjusted <- if (is.finite(null_sd) && null_sd > 0) (observed_z - null_mean) / null_sd else NA_real_
-    p_corrected <- if (is.na(z_adjusted)) {
-      NA_real_
-    } else if (z_adjusted > 0) {
-      1 - pnorm(z_adjusted)
-    } else {
-      pnorm(z_adjusted)
-    }
-    p_lower <- (1 + sum(null_scores <= observed_z)) / (n_sim + 1)
-    p_upper <- (1 + sum(null_scores >= observed_z)) / (n_sim + 1)
+    # null scores equal to the observed score up to floating-point error (different summation order)
+    tol <- sqrt(.Machine$double.eps) * max(1, abs(observed_z))
+    if (!is.finite(null_sd) || null_sd <= tol) return(no_test)
+
+    z_adjusted <- (observed_z - null_mean) / null_sd
+    p_corrected <- 2 * pnorm(-abs(z_adjusted))
+    # ties with the observed score are counted in both tails
+    p_lower <- (1 + sum(null_scores <= observed_z + tol)) / (n_sim + 1)
+    p_upper <- (1 + sum(null_scores >= observed_z - tol)) / (n_sim + 1)
     p_empirical <- min(1, 2 * min(p_lower, p_upper))
     tibble(
-      metabolite = edges$metabolite[1], k = k,
+      metabolite = edges$metabolite[1], k = k, n_background = n_background,
       n_secrete = n_secrete, n_uptake = n_uptake,
       directional_Z_raw = observed_z,
       null_mean = null_mean, null_sd = null_sd,
       directional_Z_null_adjusted = z_adjusted,
       p_corrected = p_corrected,
-      p_empirical = p_empirical
+      p_empirical = p_empirical,
+      null_status = "valid"
     )
   }
 
-  # Step 7
+  # Step 7: BH over all metabolites, degenerate ones as P = 1; their reported FDR is then set to NA
   metabolite_scores <- bind_rows(lapply(metabolite_edges, score_one)) %>%
     mutate(
       predicted_direction = case_when(directional_Z_raw > 0 ~ "Increased",
                                       directional_Z_raw < 0 ~ "Decreased",
                                       TRUE ~ "Unchanged"),
-      FDR_corrected = p.adjust(p_corrected, method = "BH"),
-      FDR_empirical = p.adjust(p_empirical, method = "BH")
+      degenerate_null = null_status == "degenerate_null",
+      p_for_BH = if_else(degenerate_null, 1, p_corrected),
+      p_empirical_for_BH = if_else(degenerate_null, 1, p_empirical),
+      FDR_corrected = p.adjust(p_for_BH, method = "BH"),
+      FDR_empirical = p.adjust(p_empirical_for_BH, method = "BH"),
+      FDR_corrected = if_else(degenerate_null, NA_real_, FDR_corrected),
+      FDR_empirical = if_else(degenerate_null, NA_real_, FDR_empirical),
+      note = if_else(degenerate_null,
+                     "Significance not assessable by the random background test (k = N, one direction only); kept in the network; counted as P = 1 in BH",
+                     "")
     ) %>%
     left_join(
       reaction %>% select(exchangeRxns, equations) %>%
@@ -326,4 +345,6 @@ write.table(rm.uptake$all.met, file.path(output_dir, "reporter_metabolites_uptak
 write.table(rm.all$edge.scores, file.path(output_dir, "reporter_edge_scores.txt"), quote = F, sep = "\t", row.names = F, col.names = T)
 print(paste0("Reporter metabolites (p_corrected < 0.05): ", sum(rm.all$all.met$p_corrected < 0.05, na.rm = T),
              " in the entire network, ", sum(rm.uptake$all.met$p_corrected < 0.05, na.rm = T), " in the uptake subnetwork"))
+print(paste0("Metabolites with a degenerate null (not testable, P = 1 in BH): ", sum(rm.all$all.met$degenerate_null),
+             " in the entire network, ", sum(rm.uptake$all.met$degenerate_null), " in the uptake subnetwork"))
 print(paste0("Results are stored in ", output_dir))

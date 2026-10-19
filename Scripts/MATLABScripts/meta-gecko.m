@@ -33,10 +33,22 @@ for i = 1:length(GEMfiles)
 
 % STEP 2 Load or import GEM models
     %model = importModel(model_file);
-    model = loadConventionalGEM(); % Function has been changed locally, PDC haven't yet
+    model = loadConventionalGEM(); % replace this function by the one in Scripts/InstallationScripts/loadConventionalGEM.m before running. 
     % check the reactions in ConventionalGEM
     [model.rxns,constructEquations(model)]
     %eqn=constructEquations(model)
+
+    % Remove the CarveMe pseudo-gene 'spontaneous' so it is not treated as an enzyme.
+    % It only occurs alone or as an OR alternative in the GPRs, so these reactions can
+    % run without enzyme: clear their gene rules (no protein cost), then drop the gene.
+    spontGene = ~cellfun(@isempty, regexp(model.genes, '^(G_)?spontaneous$'));
+    if any(spontGene)
+        spontRxns = any(model.rxnGeneMat(:,spontGene), 2);
+        model.grRules(spontRxns) = {''};
+        model.rxnGeneMat(spontRxns,:) = 0;
+        model = removeGenes(model, model.genes(spontGene), false, false, false);
+        fprintf('Removed spontaneous gene, cleared GPRs of %d reactions\n', sum(spontRxns));
+    end
 
 % STEP 3 Convert the traditional one to ecGEMs one, but this ecGEMs is not functioning now;  
     % false is a full model, which is used in our pipeline 
@@ -202,7 +214,7 @@ for i = 1:length(GEMfiles)
         end
     end
     % Replace the missing protein MWs with avg enzyme weight in this species
-    ecModel.ec.mw(ecModel.ec.mw==0) = mean(ecModel.ec.mw>0);
+    ecModel.ec.mw(ecModel.ec.mw==0) = mean(ecModel.ec.mw(ecModel.ec.mw>0));
 
 
 % STEP 12 Get standard kcat (need to load Uniprot database)

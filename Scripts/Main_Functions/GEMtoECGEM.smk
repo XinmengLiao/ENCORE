@@ -114,8 +114,8 @@ rule ecGEM:
 
             cp {params.gems_path}/${{idvar}}/$bin.xml $bin/models/
             cp {params.proteinbins_path}/${{idvar}}/$bin.faa $bin/
-            # gene<TAB>full sequence, one row per gene (the .faa is line-wrapped, so join all sequence lines of a protein)
-            awk '/>/ {{if (name != "") print name"\\t"seq; name = $0; gsub(/>/,"",name); gsub(" #.*","",name); gsub (/[-.]/,"_",name); seq = ""; next}} {{gsub(/[ \\t\\r]/,"",$0); seq = seq $0}} END {{if (name != "") print name"\\t"seq}}' $bin/$bin.faa > $bin/$bin.faa.txt;
+            # gene<TAB>full sequence, one row per gene (the .faa is line-wrapped, so join all sequence lines of a protein; drop the Prodigal stop codon *)
+            awk '/>/ {{if (name != "") print name"\\t"seq; name = $0; gsub(/>/,"",name); gsub(" #.*","",name); gsub (/[-.]/,"_",name); seq = ""; next}} {{gsub(/[ \\t\\r*]/,"",$0); seq = seq $0}} END {{if (name != "") print name"\\t"seq}}' $bin/$bin.faa > $bin/$bin.faa.txt;
 
             #manage the adapter template file, class name = bin name without dots, e.g. bin.1.s -> bin1secGECKOAdapter
             AdapterFileName=$(echo "$bin" | sed 's/\\.//g')ecGECKOAdapter
