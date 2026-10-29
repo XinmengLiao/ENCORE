@@ -3,12 +3,14 @@ library(tidyr)
 library(Maaslin2)
 
 # Differential abundance analysis (DAA) of species with MaAsLin2, microbe-metabolite network
-# from the mandatory exchange reactions, and directional reporter metabolites (PredCMB-style)
+# from the mandatory exchange reactions, and directional reporter metabolites (PredCMB-style,
+# weighted by the mean relative abundance of each species)
 # Usage:
 #   Rscript DAA_RM.R <abundance_file> <taxo_dir> <metadata_file> <fva_file> <output_dir> \
-#                    [fixed_effect] [random_effect]
+#                    [fixed_effect] [random_effect] [checkm_file] [completeness] [contamination]
 #
-# abundance_file : tab-separated, columns Sample, Bin, Mapped_reads, Bin_length
+# abundance_file : tab-separated, columns Sample, Bin, Mapped_reads, Bin_length; one row per bin of
+#                  all samples (ENCORE.sh --reporter collects it from the .map files of --abundance)
 # taxo_dir       : folder with <sample>_gtdbtk_summary.tsv files from GTDB-Tk
 # metadata_file  : tab-separated, first column is the sample ID (same as Sample in abundance_file)
 # fva_file       : mandatory exchange reactions from ENCORE.sh --fva (fva/fva_mandatory_exchange.txt),
@@ -17,16 +19,22 @@ library(Maaslin2)
 # fixed_effect   : metadata column compared between two groups (default: Group); more columns can be
 #                  added as covariates, comma separated, the first one is used for the reporter metabolites
 # random_effect  : metadata column(s) for repeated measures, e.g. subject for paired samples (default: NA)
+# checkm_file    : tab-separated, columns Sample, Bin, completeness, contamination (CheckM of the reassembled
+#                  bins, collected by ENCORE.sh --reporter); default: NA, all bins are used
+# completeness   : only bins with completeness > this value (default: 70)
+# contamination  : and contamination < this value (default: 10)
 #
 # Output in output_dir:
 #   maaslin2/                         MaAsLin2 output
 #   taxoID.txt                        species ID used in MaAsLin2 and its GTDB-Tk classification
 #   daa.txt                           DAA results (classification, logFC, PValue, FDR)
 #   MMNetwork.txt                     microbe-metabolite network
-#   reporter_metabolites.txt          reporter metabolites in the entire network; null_status/degenerate_null
-#                                     mark metabolites whose significance cannot be tested (see section 3)
+#   species_abundance.txt             relative abundance of each species in each sample (bins summed)
+#   reporter_metabolites.txt          reporter metabolites in the entire network
 #   reporter_metabolites_uptake.txt   reporter metabolites in the uptake subnetwork
-#   reporter_edge_scores.txt          signed Z-score of each microbe-metabolite edge (entire network)
+#   reporter_edge_scores.txt          signed Z-score and abundance weight of each microbe-metabolite edge
+#                                     (entire network)
+#   reporter_microbial_background.txt background species and their abundance weights (both networks)
 
 sys.args <- commandArgs(trailingOnly = TRUE)
 abundance_file <- sys.args[1]
@@ -36,6 +44,9 @@ fva_file <- sys.args[4]
 output_dir <- sys.args[5]
 fixed_effect <- ifelse(is.na(sys.args[6]), "Group", sys.args[6])
 random_effect <- ifelse(is.na(sys.args[7]), "NA", sys.args[7])
+checkm_file <- ifelse(is.na(sys.args[8]), "NA", sys.args[8])
+completeness_cutoff <- ifelse(is.na(sys.args[9]), 70, as.numeric(sys.args[9]))
+contamination_cutoff <- ifelse(is.na(sys.args[10]), 10, as.numeric(sys.args[10]))
 
 fixed_effect <- unlist(strsplit(fixed_effect, ","))
 random_effect <- if (random_effect == "NA") NULL else unlist(strsplit(random_effect, ","))
@@ -66,6 +77,15 @@ map.summary <- read.csv(abundance_file, header = T, sep = "\t") %>%
 metadata <- read.csv(metadata_file, header = T, sep = "\t", check.names = F)
 colnames(metadata)[1] <- "Sample"
 map.summary <- map.summary %>% filter(Sample %in% metadata$Sample)
+
+# keep the bins that pass the CheckM cutoffs; the relative abundance is calculated among these bins
+if (checkm_file != "NA") {
+  checkm <- read.csv(checkm_file, header = T, sep = "\t") %>%
+    filter(completeness > completeness_cutoff, contamination < contamination_cutoff)
+  map.summary <- map.summary %>% semi_join(checkm, by = c("Sample", "Bin"))
+  print(paste0("Bins with completeness > ", completeness_cutoff, " and contamination < ", contamination_cutoff,
+               ": ", nrow(map.summary)))
+}
 print(paste0("Number of samples used for DAA: ", length(unique(map.summary$Sample))))
 
 # calculate the relative abundance, and sum bins of the same species
@@ -76,6 +96,7 @@ abund <- map.summary %>%
   inner_join(taxo.all, by = c("Sample", "user_genome")) %>%
   group_by(Sample, classification) %>%
   summarise(Relative_abundance = sum(Relative_abundance), .groups = "drop")
+write.table(abund, file.path(output_dir, "species_abundance.txt"), quote = F, sep = "\t", row.names = F, col.names = T)
 
 # use short species IDs as feature names, since MaAsLin2 changes special characters in the names
 taxo.id <- data.frame(classification = sort(unique(abund$classification))) %>%
@@ -176,24 +197,23 @@ write.table(network, file.path(output_dir, "MMNetwork.txt"), quote = F, sep = "\
 ####-------------------------------------------####
 #### 3. Directional reporter metabolites 
 ####-------------------------------------------####
-# PredCMB algorithm with microbial species in place of enzymatic gene families. No P-value or logFC
-# threshold, no abundance weighting. Steps:
+# PredCMB algorithm with microbial species in place of enzymatic gene families, weighted by species
+# abundance. No P-value or logFC threshold. Steps:
 #   1. Two-sided species P -> abundance-directional P: increased = P/2, decreased = 1 - P/2 (logFC = 0: Z = 0)
 #   2. Directional P -> Z = qnorm(1 - P_directional); only infinite Z are replaced by +/-max_abs_z (7)
 #   3. Exchange direction: Secrete = +1, Uptake = -1; edge_Z = z_abundance * reaction_sign
-#   4. Metabolite score = sum(edge_Z) / k (mean), k = number of unique species linked to the metabolite
-#   5. For each metabolite, sample k unique background species n_sim times (no replacement),
-#      keeping its numbers of secretion and uptake edges
-#   6. Standardize the score with the null mean/sd, two-sided normal P (p_corrected), since both
-#      increased and decreased metabolites are reported as findings
-#   7. BH-FDR across metabolites; two-sided empirical permutation P/FDR reported as sensitivity result
-# Degenerate null (null_status = "degenerate_null"): a metabolite linked to all N background species
-# (k == N) with only uptake or only secretion edges. Every random draw is then the full background
-# with the same directions, so the null has no variance and its significance cannot be assessed
-# by this test. These metabolites keep their score, k and direction and stay in the network;
-# directional_Z_null_adjusted, p_corrected, p_empirical and the reported FDRs are NA, and they are
-# counted as P = 1 in the BH correction (p_for_BH, p_empirical_for_BH).
-rma.predcmb <- function(network, pvalue, logFC, reaction,
+#   4. Abundance weight of a species: relative abundance summed over its bins within each sample, then
+#      averaged over all samples (nondetection = 0), and normalized by the sum over all background species
+#   5. Metabolite score = sum(weight * edge_Z) / k, k = number of unique species linked to the metabolite
+#   6. For each metabolite, sample k unique background species (Z and weight paired) n_sim times
+#      (no replacement), keeping its numbers of secretion and uptake edges
+#   7. Standardize the score with the null mean/sd; p_corrected is the right-tailed normal P for a
+#      positive adjusted Z and the left-tailed normal P for a negative one (as in PredCMB)
+#   8. BH-FDR across all metabolites
+# A metabolite linked to all background species (k = N) with only uptake or only secretion edges has
+# a null without variance (every draw is the full background with the same directions): its adjusted
+# Z-score is NA and p_corrected = 1, and it is kept in the BH correction.
+rma.predcmb <- function(network, pvalue, logFC, reaction, abundance_data,
                         n_sim = 1000, seed = 42, max_abs_z = 7) {
 
   # microbe and metabolite of each edge
@@ -239,81 +259,91 @@ rma.predcmb <- function(network, pvalue, logFC, reaction,
   }
   target_edges <- target_edges %>% distinct(metabolite, microbe, .keep_all = TRUE)
 
-  # background of unique species, no weights
+  # Step 4: mean relative abundance of each species over all samples, nondetection counted as 0
+  if (any(!is.finite(abundance_data$relative_abundance)) ||
+      any(abundance_data$relative_abundance < 0 | abundance_data$relative_abundance > 1 + 1e-8)) {
+    stop("Species relative abundance must be finite values between 0 and 1.")
+  }
+  n_abundance_samples <- n_distinct(abundance_data$sample)
+  abundance_weights <- abundance_data %>%
+    group_by(sample, microbe) %>%
+    summarise(sample_abundance = sum(relative_abundance), .groups = "drop") %>%
+    group_by(microbe) %>%
+    summarise(abundance_weight = sum(sample_abundance) / n_abundance_samples, .groups = "drop")
+  missing_microbes <- setdiff(unique(target_edges$microbe), abundance_weights$microbe)
+  if (length(missing_microbes) > 0) {
+    stop("No abundance for ", length(missing_microbes), " network species:\n",
+         paste(missing_microbes, collapse = "\n"))
+  }
+  target_edges <- target_edges %>% left_join(abundance_weights, by = "microbe")
+  if (any(target_edges$abundance_weight <= 0)) {
+    stop("Network species must have a positive mean abundance.")
+  }
+
+  # background of unique species, weights normalized by the sum over the background
   microbial_background <- target_edges %>%
-    select(microbe, p_input, p_directional_abundance, z_abundance, all_of(logFC), all_of(pvalue)) %>%
+    select(microbe, abundance_weight, p_input, p_directional_abundance, z_abundance,
+           all_of(logFC), all_of(pvalue)) %>%
     distinct(microbe, .keep_all = TRUE)
+  global_weight_total <- sum(microbial_background$abundance_weight)
+  target_edges$score_weight <- target_edges$abundance_weight / global_weight_total
+  microbial_background$score_weight <- microbial_background$abundance_weight / global_weight_total
 
   metabolite_edges <- target_edges %>%
     group_by(metabolite) %>%
     group_split(.keep = TRUE)
 
-  # Step 4-6
+  # Step 5-7
+  background_z <- microbial_background$z_abundance
+  background_weights <- microbial_background$score_weight
+  n_background <- length(background_z)
   set.seed(seed)
-  n_background <- nrow(microbial_background)
   score_one <- function(edges) {
     k <- nrow(edges)
     n_secrete <- sum(edges$reaction_sign == 1)
     n_uptake <- sum(edges$reaction_sign == -1)
     direction_template <- c(rep(1, n_secrete), rep(-1, n_uptake))
-    observed_z <- mean(edges$edge_Z)
-    degenerate <- k == n_background && (n_secrete == 0 || n_uptake == 0)
+    if (k > n_background) {
+      stop("Cannot draw ", k, " unique microbes from a background of ", n_background, ".")
+    }
+    observed_z <- sum(edges$edge_Z * edges$score_weight) / k
 
-    no_test <- tibble(
-      metabolite = edges$metabolite[1], k = k, n_background = n_background,
-      n_secrete = n_secrete, n_uptake = n_uptake, directional_Z_raw = observed_z,
-      null_mean = NA_real_, null_sd = NA_real_, directional_Z_null_adjusted = NA_real_,
-      p_corrected = NA_real_, p_empirical = NA_real_,
-      null_status = if (degenerate) "degenerate_null" else "not_tested"
-    )
-    # no null distribution: k larger than the background, or a degenerate (zero-variance) null
-    if (k > n_background || degenerate) return(no_test)
-
-    null_scores <- replicate(n_sim, {
-      sampled <- microbial_background %>% slice_sample(n = k, replace = FALSE)
-      mean(sampled$z_abundance * direction_template)
-    })
+    # k background species per draw, Z and weight kept paired
+    sampled_idx <- matrix(replicate(n_sim, sample.int(n_background, k, replace = FALSE)), nrow = k)
+    sampled_z <- matrix(background_z[sampled_idx], nrow = k)
+    sampled_weights <- matrix(background_weights[sampled_idx], nrow = k)
+    null_scores <- colSums(sampled_z * sampled_weights * direction_template) / k
 
     null_mean <- mean(null_scores)
     null_sd <- sd(null_scores)
-    # null scores equal to the observed score up to floating-point error (different summation order)
-    tol <- sqrt(.Machine$double.eps) * max(1, abs(observed_z))
-    if (!is.finite(null_sd) || null_sd <= tol) return(no_test)
-
-    z_adjusted <- (observed_z - null_mean) / null_sd
-    p_corrected <- 2 * pnorm(-abs(z_adjusted))
-    # ties with the observed score are counted in both tails
-    p_lower <- (1 + sum(null_scores <= observed_z + tol)) / (n_sim + 1)
-    p_upper <- (1 + sum(null_scores >= observed_z - tol)) / (n_sim + 1)
-    p_empirical <- min(1, 2 * min(p_lower, p_upper))
+    z_adjusted <- if (is.finite(null_sd) && null_sd > 0) (observed_z - null_mean) / null_sd else NA_real_
+    # PredCMB: upper normal tail for a positive adjusted Z, lower tail for a negative one
+    p_corrected <- if (is.na(z_adjusted)) NA_real_ else if (z_adjusted > 0) 1 - pnorm(z_adjusted) else pnorm(z_adjusted)
+    # all background species in one direction only: no null variance, adjusted Z undefined, P = 1
+    # (the draws above are still made, so the random numbers of the other metabolites do not change)
+    if (k == n_background && (n_secrete == 0 || n_uptake == 0)) {
+      null_mean <- observed_z
+      null_sd <- 0
+      z_adjusted <- NA_real_
+      p_corrected <- 1
+    }
     tibble(
       metabolite = edges$metabolite[1], k = k, n_background = n_background,
       n_secrete = n_secrete, n_uptake = n_uptake,
       directional_Z_raw = observed_z,
       null_mean = null_mean, null_sd = null_sd,
       directional_Z_null_adjusted = z_adjusted,
-      p_corrected = p_corrected,
-      p_empirical = p_empirical,
-      null_status = "valid"
+      p_corrected = p_corrected
     )
   }
 
-  # Step 7: BH over all metabolites, degenerate ones as P = 1; their reported FDR is then set to NA
+  # Step 8: BH over all metabolites, a P that cannot be calculated counted as 1
   metabolite_scores <- bind_rows(lapply(metabolite_edges, score_one)) %>%
     mutate(
       predicted_direction = case_when(directional_Z_raw > 0 ~ "Increased",
                                       directional_Z_raw < 0 ~ "Decreased",
                                       TRUE ~ "Unchanged"),
-      degenerate_null = null_status == "degenerate_null",
-      p_for_BH = if_else(degenerate_null, 1, p_corrected),
-      p_empirical_for_BH = if_else(degenerate_null, 1, p_empirical),
-      FDR_corrected = p.adjust(p_for_BH, method = "BH"),
-      FDR_empirical = p.adjust(p_empirical_for_BH, method = "BH"),
-      FDR_corrected = if_else(degenerate_null, NA_real_, FDR_corrected),
-      FDR_empirical = if_else(degenerate_null, NA_real_, FDR_empirical),
-      note = if_else(degenerate_null,
-                     "Significance not assessable by the random background test (k = N, one direction only); kept in the network; counted as P = 1 in BH",
-                     "")
+      FDR_corrected = p.adjust(replace(p_corrected, is.na(p_corrected), 1), method = "BH")
     ) %>%
     left_join(
       reaction %>% select(exchangeRxns, equations) %>%
@@ -332,19 +362,34 @@ rma.predcmb <- function(network, pvalue, logFC, reaction,
                                                 edge_Z < 0 ~ "Decreased",
                                                 TRUE ~ "Unchanged"))
 
-  list(all.met = metabolite_scores, edge.scores = edge_scores)
+  list(all.met = metabolite_scores, edge.scores = edge_scores,
+       microbial.background = microbial_background, n_abundance_samples = n_abundance_samples)
 }
 
+# relative abundance of each species in every sample used in the DAA (bins of a species summed)
+species_abundance <- abund %>%
+  filter(Sample %in% rownames(metadata)) %>%
+  transmute(sample = Sample, microbe = classification, relative_abundance = Relative_abundance)
+
 print("Now identifying reporter metabolites in the entire network. ")
-rm.all <- rma.predcmb(network, pvalue = "PValue", logFC = "logFC", reaction = fva.all)
+rm.all <- rma.predcmb(network, pvalue = "PValue", logFC = "logFC", reaction = fva.all,
+                      abundance_data = species_abundance)
 print("Now identifying reporter metabolites in the uptake subnetwork. ")
-rm.uptake <- rma.predcmb(network.uptake, pvalue = "PValue", logFC = "logFC", reaction = fva.all)
+rm.uptake <- rma.predcmb(network.uptake, pvalue = "PValue", logFC = "logFC", reaction = fva.all,
+                         abundance_data = species_abundance)
+print(paste0("Number of samples used for the abundance weights: ", rm.all$n_abundance_samples))
 
 write.table(rm.all$all.met, file.path(output_dir, "reporter_metabolites.txt"), quote = F, sep = "\t", row.names = F, col.names = T)
 write.table(rm.uptake$all.met, file.path(output_dir, "reporter_metabolites_uptake.txt"), quote = F, sep = "\t", row.names = F, col.names = T)
 write.table(rm.all$edge.scores, file.path(output_dir, "reporter_edge_scores.txt"), quote = F, sep = "\t", row.names = F, col.names = T)
+write.table(bind_rows(rm.all$microbial.background %>% mutate(network = "full"),
+                      rm.uptake$microbial.background %>% mutate(network = "uptake")),
+            file.path(output_dir, "reporter_microbial_background.txt"), quote = F, sep = "\t", row.names = F, col.names = T)
+
+one_direction_all <- function(res) sum(res$k == res$n_background & (res$n_secrete == 0 | res$n_uptake == 0))
 print(paste0("Reporter metabolites (p_corrected < 0.05): ", sum(rm.all$all.met$p_corrected < 0.05, na.rm = T),
              " in the entire network, ", sum(rm.uptake$all.met$p_corrected < 0.05, na.rm = T), " in the uptake subnetwork"))
-print(paste0("Metabolites with a degenerate null (not testable, P = 1 in BH): ", sum(rm.all$all.met$degenerate_null),
-             " in the entire network, ", sum(rm.uptake$all.met$degenerate_null), " in the uptake subnetwork"))
+print(paste0("Metabolites linked to all species in one direction only (adjusted Z = NA, P = 1): ",
+             one_direction_all(rm.all$all.met), " in the entire network, ",
+             one_direction_all(rm.uptake$all.met), " in the uptake subnetwork"))
 print(paste0("Results are stored in ", output_dir))

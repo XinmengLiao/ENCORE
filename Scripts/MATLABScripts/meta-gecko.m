@@ -5,16 +5,31 @@
 
 ecGEMpath = ''
 GEMpath = '';
-cd(GEMpath)
-GEMfiles = dir(fullfile(GEMpath, '*.xml'));
-currentPath = pwd
-minus_growth = table([], [], [], 'VariableNames', {'sample', 'bin', 'growth'});
+cd(ecGEMpath);
+% Only the bins with taxonomic information have a folder in ecGEMpath
+GEMfiles = dir(fullfile(ecGEMpath, 'bin*'));
+GEMfiles = GEMfiles([GEMfiles.isdir]);
+currentPath = pwd;
+parts = strsplit(ecGEMpath, '/');
+sample = string(parts{end});
+growth_table = table(strings(0,1), strings(0,1), zeros(0,1), 'VariableNames', {'sample', 'bin', 'growth'});
 
 for i = 1:length(GEMfiles)
-    [~, bin, ~] = fileparts(GEMfiles(i).name);  % get bins name
+    bin = GEMfiles(i).name;  % get bins name
     disp(['Current bin: ', bin]);
     binID = regexp(bin, "\.","split");
     binID = strjoin(binID(1:3),"" );
+    % Resume: a bin that finished in an earlier run (its growth file is written at the
+    % very end of the bin) is skipped, and its growth is read back
+    binGrowthFile = fullfile(ecGEMpath, bin, 'output', strcat(sample, ".", binID, 'growth.txt'));
+    if exist(binGrowthFile, 'file')
+        disp(strcat("Bin ", bin, " already finished in an earlier run, skipped."));
+        fid = fopen(binGrowthFile, 'r');
+        c = textscan(fid, '%s %s %f', 'Delimiter', '\t');
+        fclose(fid);
+        growth_table = [growth_table; table(string(c{1}), string(c{2}), c{3}, 'VariableNames', {'sample', 'bin', 'growth'})];
+        continue
+    end
     adapter_file = strcat(binID, "ecGECKOAdapter.m");
     adapterLocation = strcat(ecGEMpath, "/",bin,"/", adapter_file);
     addpath(genpath(fullfile(ecGEMpath,bin)));
@@ -27,44 +42,21 @@ for i = 1:length(GEMfiles)
 % load the protein sequences
     faa = dir(fullfile(binpath, '*.faa.txt'));
     faa = string({faa.name});
-    GeneSeqData_file = fullfile(binpath, faa)
+    GeneSeqData_file = fullfile(binpath, faa);
     GeneSeqData = readtable(GeneSeqData_file, 'Delimiter', '\t', 'ReadVariableNames', false);
     GeneSeqData.Properties.VariableNames = {'Gene', 'Protein_seq'};
 
 % STEP 2 Load or import GEM models
-    %model = importModel(model_file);
     model = loadConventionalGEM(); % replace this function by the one in Scripts/InstallationScripts/loadConventionalGEM.m before running. 
-    % check the reactions in ConventionalGEM
-    [model.rxns,constructEquations(model)]
-    %eqn=constructEquations(model)
-
-    % Remove the CarveMe pseudo-gene 'spontaneous' so it is not treated as an enzyme.
-    % It only occurs alone or as an OR alternative in the GPRs, so these reactions can
-    % run without enzyme: clear their gene rules (no protein cost), then drop the gene.
-    spontGene = ~cellfun(@isempty, regexp(model.genes, '^(G_)?spontaneous$'));
-    if any(spontGene)
-        spontRxns = any(model.rxnGeneMat(:,spontGene), 2);
-        model.grRules(spontRxns) = {''};
-        model.rxnGeneMat(spontRxns,:) = 0;
-        model = removeGenes(model, model.genes(spontGene), false, false, false);
-        fprintf('Removed spontaneous gene, cleared GPRs of %d reactions\n', sum(spontRxns));
-    end
+    [model.rxns,constructEquations(model)];
 
 % STEP 3 Convert the traditional one to ecGEMs one, but this ecGEMs is not functioning now;  
-    % false is a full model, which is used in our pipeline 
     [ecModel] = makeEcModel(model,false,[],GeneSeqData); 
-
-    % Backup the models
-    %saveEcModel(ecModel,'ecGEMtest_stage1.yml');
-    %model_tmp = fullfile(currentPath, bin, 'models','ecGEM_stage1.yml')
-    %writeYAMLmodel(ecModel,  model_tmp)
 
 
 %% STAGE 2: Integration of Kcat into the ecGEMs
 % STEP 4 Gather EC numbers from Uniprot and KEGG, required for BRENDA as kcat source
-    % Importmodel function in the loadEcModel() need to be set as false 
-    %ecModel=loadEcModel('ecGEM_stage1.yml'); 
-    
+
     % Uniprot EC number searching 
     kegg.ID      = params.kegg.ID;
     uniprot.ID   = params.uniprot.ID;
@@ -87,7 +79,15 @@ for i = 1:length(GEMfiles)
                    uniprot.type ':' num2str(uniprot.ID) '&fields=accession%2Cgene_names%2Cec%2Cmass%2Csequence&format=tsv&compressed=false&sort=protein_name%20asc'];
     
         try
-            urlwrite(uniproturl,uniprotPath,'Timeout',30);
+            for attempt = 1:6
+                try
+                    urlwrite(uniproturl,uniprotPath,'Timeout',30);
+                    break
+                catch downloadErr
+                    if attempt == 6, rethrow(downloadErr); end
+                    pause(2^attempt); % UniProt sometimes refuses bursts of requests: wait and retry
+                end
+            end
             fid         = fopen(uniprotPath,'r');
             fileContent = textscan(fid,'%q %q %q %q %q','Delimiter','\t','HeaderLines',1);
             if size(fileContent{1},1) > 1
@@ -102,7 +102,7 @@ for i = 1:length(GEMfiles)
                 uniprot_notfound = true; 
             end
         catch
-            error(['Download failed, check your internet connection and try again, or manually download: ' uniproturl])
+            error(['Download failed, check your internet connection and try again, or manually download: ' uniproturl]);
         end
     else
         uniprot_exist = false;
@@ -116,7 +116,15 @@ for i = 1:length(GEMfiles)
         keggPath = fullfile(filePath,'kegg.tsv');
         try
             options = weboptions('Timeout', 30); 
-            websave(keggPath, kegg_url, options);
+            for attempt = 1:6
+                try
+                    websave(keggPath, kegg_url, options);
+                    break
+                catch downloadErr
+                    if attempt == 6, rethrow(downloadErr); end
+                    pause(2^attempt); % KEGG sometimes refuses bursts of requests: wait and retry
+                end
+            end
             keggfid         = fopen(keggPath,'r');
             keggfileContent = textscan(keggfid,'%q %q %q %q %q %q %q','Delimiter',',','HeaderLines',0);
             if size(keggfileContent{1},1) > 1
@@ -131,7 +139,7 @@ for i = 1:length(GEMfiles)
                 kegg_notfound = true; 
             end
         catch
-            error(['Download failed, check your internet connection and try again, or manually download: ' kegg_url])
+            error(['Download failed, check your internet connection and try again, or manually download: ' kegg_url]);
         end
     else
         kegg_exist = false;
@@ -140,27 +148,26 @@ for i = 1:length(GEMfiles)
 
     
     % merge Uniprot and/or KEGG EC number together into model
-    %if ~strcmp(params.kegg.ID, '') || ~strcmp(params.uniprot.ID, '')
     if uniprot_exist && kegg_exist
         ecModel         = getECfromGEM(ecModel);
         noEC = cellfun(@isempty, ecModel.ec.eccodes);
         ecModel         = getECfromDatabase(ecModel,noEC); % Gather Kcat from Brenda into model based on Uniprot and KEGG
         kcatList_fuzzy  = fuzzyKcatMatching(ecModel); % The fuzzyKcatMatching function has been changed locally, but the one in PDC still remaines unchanged. 
-        kcatlist = true
+        kcatlist = true;
     elseif uniprot_exist && ~kegg_exist
         ecModel         = getECfromGEM(ecModel);
         noEC = cellfun(@isempty, ecModel.ec.eccodes);
         ecModel         = getECfromDatabase_uniprot(ecModel,noEC); % Gather Kcat from Brenda into model based on Uniprot and KEGG
         kcatList_fuzzy  = fuzzyKcatMatching(ecModel); % The fuzzyKcatMatching function has been changed locally, but the one in PDC still remaines unchanged. 
-        kcatlist = true
+        kcatlist = true;
     elseif ~uniprot_exist && kegg_exist
         ecModel         = getECfromGEM(ecModel);
         noEC = cellfun(@isempty, ecModel.ec.eccodes);
         ecModel         = getECfromDatabase_kegg(ecModel,noEC); % Gather Kcat from Brenda into model based on Uniprot and KEGG
         kcatList_fuzzy  = fuzzyKcatMatching(ecModel); % The fuzzyKcatMatching function has been changed locally, but the one in PDC still remaines unchanged. 
-        kcatlist = true
+        kcatlist = true;
     else
-        kcatlist = false
+        kcatlist = false;
 
     end
 
@@ -168,24 +175,40 @@ for i = 1:length(GEMfiles)
 % STEP 5 Gather metabolite SMILES, required for DLKcat as kcat source
     % Metabolite SMILES are gathered from PubChem.
     % Finding the chemical structures from PubChem for every metabolite
-    [ecModel, noSmiles] = findMetSmiles(ecModel);
+    % SMILES are only used to write the DLKcat input: skip if data/DLKcat.tsv already exists
+    if ~exist(fullfile(params.path,'data/DLKcat.tsv'), 'file')
+        [ecModel, noSmiles] = findMetSmiles(ecModel);
+    else
+        disp('DLKcat.tsv already exists, SMILES search skipped.');
+    end
 
-    %backup the model 
-    %model_tmp = fullfile(currentPath, bin, 'models','ecGEM_stage2.yml')
-    %writeYAMLmodel(ecModel,  model_tmp)
-    %ecModel=loadEcModel('ecGEM_stage2.yml'); 
 
 % STEP 6 Predict kcat values with DLKcat
-    % Running DLKcat in Docker (very slow) or locally by python3.12 (miniconda3)
-    writeDLKcatInput(ecModel,[],[],[],[],true);
-    runDLKcat();
+    % Skip the prediction if data/DLKcat.tsv (with predicted kcats) already exists
+    if ~exist(fullfile(params.path,'data/DLKcat.tsv'), 'file')
+        % Running DLKcat in Docker (very slow) or locally by python3.12 (miniconda3)
+        writeDLKcatInput(ecModel,[],[],[],[],true);
+        try
+            runDLKcat();
+        catch dlkcatErr
+            % Remove the input-only DLKcat.tsv (no kcat column), otherwise a rerun would skip prediction
+            if exist(fullfile(params.path,'data/DLKcat.tsv'), 'file')
+                delete(fullfile(params.path,'data/DLKcat.tsv'));
+            end
+            rethrow(dlkcatErr);
+        end
+        disp('DLKcat prediction completed.');
+    else
+        disp('DLKcat.tsv already exists, DLKcat prediction skipped.');
+    end
+    cd(fullfile(ecGEMpath,bin));
 
 % STEP 7 Load DLKcat output
     kcatList_DLKcat = readDLKcatOutput(ecModel);
 
 % STEP 8 Combine kcat from BRENDA and DLKcat
     if kcatlist
-        kcatList_merged = mergeDLKcatAndFuzzyKcats(kcatList_DLKcat, kcatList_fuzzy)
+        kcatList_merged = mergeDLKcatAndFuzzyKcats(kcatList_DLKcat, kcatList_fuzzy);
     else
         kcatList_merged = kcatList_DLKcat;
     end
@@ -199,17 +222,17 @@ for i = 1:length(GEMfiles)
 
 % STEP 11 Calculate molecular weight and store them as model.ec.mw 
     ecModel.ec.mw = zeros(size(ecModel.ec.sequence));
-    for i = 1:length(ecModel.ec.mw)
-        if strcmp(ecModel.ec.sequence{i},'Sequence unavailable')
-            ecModel.ec.mw(i) = 0;
-        elseif isnan(ecModel.ec.sequence{i})
-            ecModel.ec.mw(i) = 0;
+    for j = 1:length(ecModel.ec.mw)
+        if strcmp(ecModel.ec.sequence{j},'Sequence unavailable')
+            ecModel.ec.mw(j) = 0;
+        elseif isnan(ecModel.ec.sequence{j})
+            ecModel.ec.mw(j) = 0;
         else
             try
-                ecModel.ec.mw(i) = molweight(strrep(ecModel.ec.sequence{i},'X','D'));
+                ecModel.ec.mw(j) = molweight(strrep(ecModel.ec.sequence{j},'X','D'));
             catch 
-                fprintf('Protein No. %d does not have molecular weight. Mean molecular weight will be used.\n', i);
-                ecModel.ec.mw(i) = 0;
+                fprintf('Protein No. %d does not have molecular weight. Mean molecular weight will be used.\n', j);
+                ecModel.ec.mw(j) = 0;
             end
         end
     end
@@ -217,118 +240,119 @@ for i = 1:length(GEMfiles)
     ecModel.ec.mw(ecModel.ec.mw==0) = mean(ecModel.ec.mw(ecModel.ec.mw>0));
 
 
-% STEP 12 Get standard kcat (need to load Uniprot database)
+% STEP 12 Get standard kcat
+    % Fills kcat = 0 (no BRENDA/DLKcat value) with the median kcat of the model,
+    % and links reactions without GPR to a 'standard' pseudo-enzyme.
+    % The Uniprot database is only used for the standard MW; without it, the
+    % median MW of the bin's own proteins is used instead.
     if uniprot_notfound == false
         [ecModel, rxnsMissingGPR, standardMW, standardKcat] = getStandardKcat(ecModel);
     else
-        disp("Will not get standard kcat from Uniprot since proteome can not be found in Uniprot")
+        disp("Proteome not found in Uniprot: standard MW taken from the bin's own proteins");
+        [ecModel, rxnsMissingGPR, standardMW, standardKcat] = getStandardKcat_noUniprot(ecModel);
     end
 
-% STEP 13 Apply kcat constraints from ecModel.ec.kcat to ecModel.S
+% STEP 13 Make spontaneous reactions free of protein cost
+    % Keep the 'spontaneous' gene/protein in the ecModel so it can be saved and loaded again,
+    % but set kcat = 0 for reactions catalysed only by spontaneous: applyKcatConstraints
+    % then gives them zero protein cost, so prot_spontaneous never uses the protein pool.
+    % Done after getStandardKcat, otherwise the zero kcats would be refilled with standard kcats.
+    spontEnz = strcmpi(ecModel.ec.genes, 'spontaneous');
+    if any(spontEnz)
+        nEnz = sum(ecModel.ec.rxnEnzMat ~= 0, 2);
+        spontEcRxns = any(ecModel.ec.rxnEnzMat(:, spontEnz) ~= 0, 2) & nEnz == 1;
+        ecModel.ec.kcat(spontEcRxns) = 0;
+        ecModel.ec.source(spontEcRxns) = {'spontaneous'};
+        fprintf('%d spontaneous reactions set to zero protein cost.\n', sum(spontEcRxns));
+    end
+
+% STEP 14 Apply kcat constraints from ecModel.ec.kcat to ecModel.S
     ecModel = applyKcatConstraints(ecModel);
 
-% STEP 14 Set upper bound of protein pool
+% STEP 15 Set upper bound of protein pool
     Ptot  = ModelAdapter.params.Ptot;
     f     = ModelAdapter.params.f;
     sigma = ModelAdapter.params.sigma;
     ecModel = setProtPoolSize(ecModel,Ptot,f,sigma);
 
-% STEP 15 Save EC Model
-    finalid = strcat(binID, 'Ready_ecGEM.yml')
-    model_tmp = fullfile(ecGEMpath, bin, 'models',finalid)
-    writeYAMLmodel(ecModel,  model_tmp)
+% STEP 16 Save EC Model
+    finalid = strcat(binID, 'Ready_ecGEM.yml');
+    model_tmp = fullfile(ecGEMpath, bin, 'models',finalid);
+    writeYAMLmodel(ecModel,  model_tmp);
 
-% STEP 16 Run FVA for exchange reactions only 
+% STEP 17 Run FVA for exchange reactions only 
     % Recommend to use Gurobi solver from RAVEN for FVA 
     % set RAVEN solver as gurobi
-    setRavenSolver('gurobi')
-
-    % Double confirm if RAVEN solver is gurobi
-    checkInstallation
-
-    % load ecGEM
-    ecmodel_path = strcat(model_tmp)
-    ecModel = readYAMLmodel(ecmodel_path)
+    setRavenSolver('gurobi');
 
     % check the reactions in ecModel ensure exchange reations are completed 
     [ecModel.rxns, constructEquations(ecModel)];
     
     % Extract the exchange reactions
     exchangeRxns = getExchangeRxns(ecModel);
-    prot_idx = startsWith(exchangeRxns, 'prot');
-    sink_idx = startsWith(exchangeRxns, 'sink');
-    remove_idx = prot_idx | sink_idx;
-    exchangeRxns = exchangeRxns(~remove_idx);
+    keep_idx = startsWith(exchangeRxns, "EX_");
+    exchangeRxns = exchangeRxns(keep_idx);
     
     % Create matrix to store LB and UB
     n_exc = length(exchangeRxns);
     LB_exc = zeros(n_exc, 1);
     UB_exc = zeros(n_exc, 1); 
     equations= cell(n_exc, 1);
-    
+
     % FVA
     sensitivity = ;
-    %ecModel = setParam(ecModel,'ub',ecModel.rxns(ecModel.c>0),1);
-    sol_opt = solveLP(ecModel);
     sol0 = solveLP(ecModel);
-    objFlux = sol_opt.x(ecModel.c>0)
-    parts = strsplit(ecGEMpath, '/'); 
-    sample = parts{end};
-    sample = string(sample);
+    objFlux = sol0.x(ecModel.c>0);
+    objFlux = [objFlux; NaN];
+    objFlux = objFlux(1);
     bin = string(bin);
 
-    if objFlux <= 0
-        tmp = table(sample, bin, objFlux, 'VariableNames', {'sample', 'bin', 'growth'});            
-        minus_growth = [minus_growth; tmp]
+    % Store the growth rate of every bin, including 0 and NA
+    tmp = table(sample, bin, objFlux, 'VariableNames', {'sample', 'bin', 'growth'});
+    growth_table = [growth_table; tmp];
+
+    if isnan(objFlux) || objFlux <= 0
+        disp(strcat("Growth of ", bin, " is 0 or NA, FVA skipped."));
     else
         % run FVA for (sensitivity rate) of the maximun growth rate 
         bioModel = setParam(ecModel,'lb',ecModel.rxns(ecModel.c>0),sensitivity * objFlux);
         bioModel = setParam(bioModel,'ub',ecModel.rxns(ecModel.c>0),objFlux);
         [found, idx] = ismember(exchangeRxns, bioModel.rxns);
         
-        for i = 1:length(exchangeRxns)
-            i
-            iRxn = bioModel.rxns(idx(i));
+        for k = 1:length(exchangeRxns)
+            iRxn = bioModel.rxns(idx(k));
             iModel = setParam(bioModel,'obj',iRxn,1);
             iSol = solveLP(iModel);
-            
             try
-                UB_exc(i) = iSol.x(ismember(iModel.rxns, iRxn));
+                UB_exc(k) = iSol.x(ismember(iModel.rxns, iRxn));
             catch
-                UB_exc(i) = sol0.x(logical(iModel.c));
-                iRxn = string(iRxn)
-                reaction_tmp = strcat(iRxn, " No UB_exc");  
-                reaction_tmp = string(reaction_tmp); 
-                sample = string(sample);
-                bin = string(bin);
-                tmp = table(sample(:), bin(:), reaction_tmp(:), 'VariableNames', {'sample','bin','growth'});
-                minus_growth = [minus_growth; tmp];
+                UB_exc(k) = sol0.x(logical(iModel.c));
             end
             
             iModel = setParam(bioModel,'obj',iRxn,-1);
             iSol = solveLP(iModel);
             try
-                LB_exc(i) = iSol.x(ismember(iModel.rxns, iRxn));
+                LB_exc(k) = iSol.x(ismember(iModel.rxns, iRxn));
             catch
-                LB_exc(i) = sol0.x(logical(iModel.c));
-                iRxn = string(iRxn)
-                reaction_tmp = strcat(iRxn, " No UB_exc");  
-                reaction_tmp = string(reaction_tmp); 
-                sample = string(sample);
-                bin = string(bin);
-                tmp = table(sample(:), bin(:), reaction_tmp(:), 'VariableNames', {'sample','bin','growth'});
-                minus_growth = [minus_growth; tmp];
+                LB_exc(k) = sol0.x(logical(iModel.c));
             end
            
-            equations{i} = constructEquations(bioModel, iRxn);
+            equations{k} = constructEquations(bioModel, iRxn);
         end
 
         exchange_results = table(exchangeRxns, equations, LB_exc, UB_exc);
-	    fva_filename = strcat(sample, ".",binID, 'FVA.txt')
-        outputfile = fullfile(ecGEMpath, bin, 'output', fva_filename)
+        fva_filename = strcat(sample, ".",binID, 'FVA.txt');
+        outputfile = fullfile(ecGEMpath, bin, 'output', fva_filename);
         writetable(exchange_results, outputfile,'Delimiter', '\t', 'QuoteStrings', false, 'FileType', 'text');
     end  
+
+    % Mark the bin as finished: its growth is written last, so a bin that crashed
+    % halfway has no growth file and is run again on resume
+    fid = fopen(binGrowthFile, 'w');
+    fprintf(fid, '%s\t%s\t%.10g\n', sample, bin, objFlux);
+    fclose(fid);
 end
 
-minus_file = fullfile(ecGEMpath, 'minus_growth.txt')
-writetable(minus_growth, minus_file,'Delimiter', '\t', 'QuoteStrings', false, 'FileType', 'text');
+% Export the growth rate of all bins in this sample
+growth_file = fullfile(ecGEMpath, strcat(sample, "_growth.txt"));
+writetable(growth_table, growth_file,'Delimiter', '\t', 'QuoteStrings', false, 'FileType', 'text');

@@ -68,7 +68,7 @@ Please follow the installations in [GECKO3 tutorial](https://github.com/SysBioCh
 
 1. Since GECKO 3.0 is applied via **MATLAB**, a valid MATLAB license is required.
   
-2. ENCORE uses its own versions of several GECKO 3.0 functions (`Scripts/InstallationScripts/`: `fuzzyKcatMatching.m`, `getECfromDatabase_kegg.m`, `getECfromDatabase_uniprot.m`, `loadConventionalGEM.m`, `makeEcModel.m`). `--ecgem` puts this folder on top of the MATLAB path, so the GECKO installation does not need to be changed.
+2. ENCORE uses its own versions of several GECKO 3.0 functions (`Scripts/InstallationScripts/`: `fuzzyKcatMatching.m`, `getECfromDatabase_kegg.m`, `getECfromDatabase_uniprot.m`, `loadConventionalGEM.m`, `makeEcModel.m`), and `getStandardKcat_noUniprot.m` for bins whose proteome is not in UniProt. `--ecgem` puts this folder on top of the MATLAB path, so the GECKO installation does not need to be changed.
 
 3. Set the paths of RAVEN, GECKO and Gurobi under `matlab:` in `ENCORE_config.yaml` (leave them empty if the toolboxes are already on the MATLAB path).
 

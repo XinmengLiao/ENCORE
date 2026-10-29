@@ -81,6 +81,8 @@ params:
     roaryI: 90
     roaryCD: 90
     FVAsensitivity: 0.95
+    reporterComp: 70 # --reporter: only bins with CheckM completeness > reporterComp
+    reporterCont: 10 # and contamination < reporterCont
 matlab: # toolboxes added to the MATLAB path by --ecgem (leave empty if already on the path)
     raven:
     gecko:

@@ -169,9 +169,9 @@ bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --fva
 
 #### Step 14: DAA, Microbe-Metabolite Network and Reporter Metabolites
 `--reporter` runs `Scripts/RScripts/DAA_RM.R`:
-1. Differential abundance analysis (DAA) of the species with MaAsLin2, on the relative abundance of the bins (Step 8) summed per species (Step 10)
+1. Differential abundance analysis (DAA) of the species with MaAsLin2, on the relative abundance of the bins (Step 8) summed per species (Step 10). Only bins with CheckM completeness > `reporterComp` (default 70) and contamination < `reporterCont` (default 10) are used (`params:` in `ENCORE_config.yaml`, CheckM from the reassembly)
 2. Microbe-metabolite network from the mandatory exchange reactions (Step 13)
-3. Directional reporter metabolites (PredCMB-style, with species in place of gene families), in the entire network and in the uptake subnetwork
+3. Directional reporter metabolites (PredCMB-style, with species in place of gene families, weighted by the mean relative abundance of each species over all samples), in the entire network and in the uptake subnetwork. A metabolite linked to all species with only uptake or only secretion has no null variance: its corrected Z-score is NA and its P = 1, and BH-FDR is applied to all metabolites
 
 Required files:
 - Sample metadata (`--metadata`): tab-separated, the first column is the sample ID (as in the data folder), plus the column with the two groups compared (`--fixed-effect`, default `Group`). For paired samples, add a column with the subject ID and set `--random-effect`.
@@ -191,7 +191,10 @@ Results in `output/reporter_metabolite/`:
 | `MMNetwork.txt` | Microbe-metabolite network |
 | `reporter_metabolites.txt` | Reporter metabolites in the entire network |
 | `reporter_metabolites_uptake.txt` | Reporter metabolites in the uptake subnetwork |
-| `reporter_edge_scores.txt` | Signed Z-score of each microbe-metabolite edge |
+| `reporter_edge_scores.txt` | Signed Z-score and abundance weight of each microbe-metabolite edge |
+| `reporter_microbial_background.txt` | Background species and their abundance weights |
+| `species_abundance.txt` | Relative abundance of each species in each sample |
+| `abundance.summary.txt`, `checkm.summary.txt` | Mapped reads and CheckM quality of all bins (inputs of `DAA_RM.R`) |
 
 ---
 
