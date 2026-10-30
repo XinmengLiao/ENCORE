@@ -157,7 +157,7 @@ bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --reporter \
 ```
 
 ### 🧪 Toy dataset
-The toy dataset (three samples, ~7 GB of paired-end reads) is too large for GitHub. Download it [here](https://zenodo.org/records/23311537) and unzip it into `Example/Toy_Dataset/`.
+The toy dataset (three samples, ~7.5 GB of paired-end reads) is too large for GitHub. Download it [here](https://zenodo.org/records/23311537).
 
 ### 📖 Detailed tutorial: 
 More detailed functions and usage illustrating with the toy datasets could be found in [ENCORE_Manual](https://github.com/XinmengLiao/ENCORE/blob/main/Scripts/Main_Functions/README.md). The runtime of each step on the toy dataset is summarized in [Example/README.md](https://github.com/XinmengLiao/ENCORE/blob/main/Example/README.md).

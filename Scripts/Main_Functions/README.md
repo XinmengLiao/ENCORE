@@ -174,11 +174,11 @@ bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --fva
 3. Directional reporter metabolites (PredCMB-style, with species in place of gene families, weighted by the mean relative abundance of each species over all samples), in the entire network and in the uptake subnetwork. A metabolite linked to all species with only uptake or only secretion has no null variance: its corrected Z-score is NA and its P = 1, and BH-FDR is applied to all metabolites
 
 Required files:
-- Sample metadata (`--metadata`): tab-separated, the first column is the sample ID (as in the data folder), plus the column with the two groups compared (`--fixed-effect`, default `Group`). For paired samples, add a column with the subject ID and set `--random-effect`.
+- Sample metadata (`--metadata`): tab-separated, the first column is the sample ID (as in the data folder), plus the column with the two groups compared (`--fixed-effect`, default `Group`). MaAsLin2 uses this column only, without covariates or a paired design.
 
 ```bash
 bash ENCORE.sh -o ./output -c test -d ./Toy_Dataset --reporter \
-    --metadata metadata.tsv --fixed-effect Group --random-effect subject
+    --metadata metadata.tsv --fixed-effect Group
 ```
 
 Results in `output/reporter_metabolite/`:

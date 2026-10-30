@@ -47,6 +47,12 @@ completeness_cutoff <- ifelse(is.na(sys.args[8]), 70, as.numeric(sys.args[8]))
 contamination_cutoff <- ifelse(is.na(sys.args[9]), 10, as.numeric(sys.args[9]))
 
 if (grepl(",", fixed_effect)) stop("fixed_effect must be a single metadata column, found: ", fixed_effect)
+if (checkm_file == "NA") {
+  warning("No checkm_file given: the CheckM filter is skipped and all bins are used")
+} else if (!file.exists(checkm_file)) {
+  stop("checkm_file not found: ", checkm_file,
+       " (arguments: ... <output_dir> [fixed_effect] [checkm_file] [completeness] [contamination])")
+}
 dir.create(output_dir, showWarnings = F, recursive = T)
 
 ####-------------------------------------------####
