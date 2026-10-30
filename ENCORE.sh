@@ -9,7 +9,6 @@ COHORT=""
 DATA_FOLDER=""
 METADATA_FILE=""
 FIXED_EFFECT="Group"
-RANDOM_EFFECT="NA"
 SCRIPT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Scripts/ is next to this file (repository root) or one level up (Example/)
 if [[ -d "${SCRIPT_HOME}/Scripts" ]]; then
@@ -338,7 +337,7 @@ run_reporter_bash() {
     [[ -f "$fva_file" ]] || { log_error "FVA file not found: $fva_file (run --fva first)"; return 1; }
     command -v Rscript &> /dev/null || { log_error "Rscript is not installed or not in PATH"; return 1; }
 
-    log_info "Metadata: $METADATA_FILE (fixed effect: $FIXED_EFFECT, random effect: $RANDOM_EFFECT)"
+    log_info "Metadata: $METADATA_FILE (group column: $FIXED_EFFECT)"
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[dry-run] would run $daa_rm and write the results to $out_dir"
         return 0
@@ -381,7 +380,7 @@ run_reporter_bash() {
 
     log_info "Now running DAA, microbe-metabolite network and reporter metabolites ..."
     Rscript "$daa_rm" "$summary" "$out_dir/taxonomy" "$METADATA_FILE" "$fva_file" "$out_dir" \
-        "$FIXED_EFFECT" "$RANDOM_EFFECT" "$checkm_summary" "${comp_cutoff:-70}" "${cont_cutoff:-10}" \
+        "$FIXED_EFFECT" "$checkm_summary" "${comp_cutoff:-70}" "${cont_cutoff:-10}" \
         2>&1 | tee "$out_dir/DAA_RM.Rlog"
     [[ ${PIPESTATUS[0]} -eq 0 ]] || { log_error "DAA_RM.R failed, see $out_dir/DAA_RM.Rlog"; return 1; }
 
@@ -473,8 +472,7 @@ OPTIONS:
 REPORTER OPTIONS (--reporter):
   --metadata <file>           Sample metadata (required): tab-separated, first column = sample ID
   --fixed-effect <col>        Metadata column with the two groups compared (default: Group);
-                              extra covariates comma separated, e.g. Group,Age
-  --random-effect <col>       Metadata column for paired / repeated samples (default: none)
+                              MaAsLin2 uses this column only (no covariates, no paired design)
 
 WORKFLOW GROUPS:
   --preprocessing   quality, trim, assembly
@@ -517,7 +515,7 @@ EXAMPLES:
 
   # DAA, microbe-metabolite network and reporter metabolites
   bash $0 -o ./output -c test -d ./Toy_Dataset --reporter \\
-      --metadata metadata.tsv --fixed-effect Group --random-effect subject
+      --metadata metadata.tsv --fixed-effect Group
 EOF
 }
 
@@ -549,10 +547,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fixed-effect)
             FIXED_EFFECT="$2"
-            shift 2
-            ;;
-        --random-effect)
-            RANDOM_EFFECT="$2"
             shift 2
             ;;
         -s|--scripts-dir)

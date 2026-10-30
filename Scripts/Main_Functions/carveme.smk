@@ -71,7 +71,7 @@ rule carveme:
                 -g {config[params][carveMedia]} \
                 -v \
                 --diamond-args "--threads {threads}" \
-                --mediadb $medie_file \
+                --mediadb media_db.tsv \
                 --fbc2 \
                 -o ${{binID}}.xml 
         

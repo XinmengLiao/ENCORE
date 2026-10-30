@@ -7,7 +7,7 @@ library(Maaslin2)
 # weighted by the mean relative abundance of each species)
 # Usage:
 #   Rscript DAA_RM.R <abundance_file> <taxo_dir> <metadata_file> <fva_file> <output_dir> \
-#                    [fixed_effect] [random_effect] [checkm_file] [completeness] [contamination]
+#                    [fixed_effect] [checkm_file] [completeness] [contamination]
 #
 # abundance_file : tab-separated, columns Sample, Bin, Mapped_reads, Bin_length; one row per bin of
 #                  all samples (ENCORE.sh --reporter collects it from the .map files of --abundance)
@@ -16,9 +16,8 @@ library(Maaslin2)
 # fva_file       : mandatory exchange reactions from ENCORE.sh --fva (fva/fva_mandatory_exchange.txt),
 #                  columns exchangeRxns, equations, LB_exc, UB_exc, Direction, Sample, Bin
 # output_dir     : output folder
-# fixed_effect   : metadata column compared between two groups (default: Group); more columns can be
-#                  added as covariates, comma separated, the first one is used for the reporter metabolites
-# random_effect  : metadata column(s) for repeated measures, e.g. subject for paired samples (default: NA)
+# fixed_effect   : metadata column with the two groups compared (default: Group); MaAsLin2 is run with
+#                  this column only, without covariates or random effects (no paired design)
 # checkm_file    : tab-separated, columns Sample, Bin, completeness, contamination (CheckM of the reassembled
 #                  bins, collected by ENCORE.sh --reporter); default: NA, all bins are used
 # completeness   : only bins with completeness > this value (default: 70)
@@ -43,13 +42,11 @@ metadata_file <- sys.args[3]
 fva_file <- sys.args[4]
 output_dir <- sys.args[5]
 fixed_effect <- ifelse(is.na(sys.args[6]), "Group", sys.args[6])
-random_effect <- ifelse(is.na(sys.args[7]), "NA", sys.args[7])
-checkm_file <- ifelse(is.na(sys.args[8]), "NA", sys.args[8])
-completeness_cutoff <- ifelse(is.na(sys.args[9]), 70, as.numeric(sys.args[9]))
-contamination_cutoff <- ifelse(is.na(sys.args[10]), 10, as.numeric(sys.args[10]))
+checkm_file <- ifelse(is.na(sys.args[7]), "NA", sys.args[7])
+completeness_cutoff <- ifelse(is.na(sys.args[8]), 70, as.numeric(sys.args[8]))
+contamination_cutoff <- ifelse(is.na(sys.args[9]), 10, as.numeric(sys.args[9]))
 
-fixed_effect <- unlist(strsplit(fixed_effect, ","))
-random_effect <- if (random_effect == "NA") NULL else unlist(strsplit(random_effect, ","))
+if (grepl(",", fixed_effect)) stop("fixed_effect must be a single metadata column, found: ", fixed_effect)
 dir.create(output_dir, showWarnings = F, recursive = T)
 
 ####-------------------------------------------####
@@ -114,31 +111,31 @@ feature_table$Sample <- NULL
 metadata <- metadata %>% filter(Sample %in% rownames(feature_table)) %>% as.data.frame()
 rownames(metadata) <- metadata$Sample
 metadata$Sample <- NULL
-for (i in fixed_effect) metadata[[i]] <- as.factor(metadata[[i]])
-for (i in random_effect) metadata[[i]] <- as.character(metadata[[i]])
-if (nlevels(metadata[[fixed_effect[1]]]) != 2){
-  stop(fixed_effect[1], " must have two groups for the reporter metabolites, found: ",
-       paste(levels(metadata[[fixed_effect[1]]]), collapse = ", "))
+if (!fixed_effect %in% colnames(metadata)) stop(fixed_effect, " is not a column of ", metadata_file)
+metadata <- metadata[, fixed_effect, drop = FALSE]
+metadata[[fixed_effect]] <- as.factor(metadata[[fixed_effect]])
+if (nlevels(metadata[[fixed_effect]]) != 2){
+  stop(fixed_effect, " must have two groups for the reporter metabolites, found: ",
+       paste(levels(metadata[[fixed_effect]]), collapse = ", "))
 }
 
 fit_data <- Maaslin2(
   input_data = feature_table,
   input_metadata = metadata,
   output = file.path(output_dir, "maaslin2"),
-  fixed_effects = fixed_effect,
-  random_effects = random_effect, # paired
+  fixed_effects = fixed_effect, # group only: no covariates, no random effects
   min_prevalence = 0.05,
   min_abundance = 0
 )
 
-# columns classification, logFC, PValue, FDR; only the comparison of the first fixed effect
+# columns classification, logFC, PValue, FDR
 masslin.res <- read.csv(file.path(output_dir, "maaslin2", "all_results.tsv"), sep = "\t", header = T) %>%
-  filter(metadata == fixed_effect[1]) %>%
+  filter(metadata == fixed_effect) %>%
   rename(SpeciesID = feature, logFC = coef, PValue = pval, FDR = qval) %>%
   left_join(taxo.id, by = "SpeciesID") %>%
   select(classification, logFC, PValue, FDR, SpeciesID, metadata, value)
 write.table(masslin.res, file.path(output_dir, "daa.txt"), quote = F, sep = "\t", row.names = F, col.names = T)
-print(paste0("Comparison: ", fixed_effect[1], " ", unique(masslin.res$value), " vs ", levels(metadata[[fixed_effect[1]]])[1]))
+print(paste0("Comparison: ", fixed_effect, " ", unique(masslin.res$value), " vs ", levels(metadata[[fixed_effect]])[1]))
 
 ####-------------------------------------------####
 #### 2. Microbe-metabolite network
@@ -149,6 +146,12 @@ fva.all <- read.csv(fva_file, header = T, sep = "\t") %>%
   mutate(user_genome = gsub("\\.","",Bin),
          direction = if_else(Direction == "Uptake", "Uptake", "Secrete")) %>%
   unique()
+# use the same CheckM-passing bins as the abundance, so every edge comes from a bin counted in the DAA
+if (checkm_file != "NA") {
+  fva.all <- fva.all %>% semi_join(checkm, by = c("Sample", "Bin"))
+  print(paste0("FVA bins with completeness > ", completeness_cutoff, " and contamination < ", contamination_cutoff,
+               ": ", nrow(distinct(fva.all, Sample, Bin))))
+}
 print(paste0("Number of samples with FVA results: ", length(unique(fva.all$Sample))))
 
 build.fva.network <- function(daa_result, fva.org, pvalue, padj, log2fc) {

@@ -106,11 +106,8 @@ rule abundance:
             echo -e "\nAppending bin length to bin.map stats file ... "
             echo -n "Bin Length = " >> "$map_file"
 
-            if [[ $bin == *.strict.fa ]] || [[ $bin == *.permissive.fa ]] || [[ $bin == *.s.fa ]] || [[ $bin == *.p.fa ]];then
-                cat $bin |grep ">"| cut -d '_' -f4|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
-            else
-                cat $bin |grep ">"| cut -d '-' -f4|sed 's/len_//g'|awk '{{sum+=$1}}END{{print sum}}' >> "$map_file"
-            fi
+            # Sum actual sequence lengths instead of parsing headers (MEGAHIT headers use len=, not len_)
+            awk '!/^>/{{gsub(/[ \t\r]/, ""); sum+=length($0)}}END{{print sum+0}}' "$bin" >> "$map_file"
 
             paste "$map_file"
 
