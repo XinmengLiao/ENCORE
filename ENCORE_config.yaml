@@ -90,3 +90,6 @@ matlab: # toolboxes added to the MATLAB path by --ecgem (leave empty if already 
 envs:
     metagem: [path/to/metagem_env]
     metawrap: [path/to/metawrap_env]
+module_envs: # module: key under envs: to 'conda activate --stack' before running it
+    refinement: metawrap
+    reassembly: metawrap

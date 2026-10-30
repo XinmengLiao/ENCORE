@@ -9,7 +9,6 @@ COHORT=""
 DATA_FOLDER=""
 METADATA_FILE=""
 FIXED_EFFECT="Group"
-RANDOM_EFFECT="NA"
 SCRIPT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Scripts/ is next to this file (repository root) or one level up (Example/)
 if [[ -d "${SCRIPT_HOME}/Scripts" ]]; then
@@ -315,14 +314,16 @@ fva_data_manage() {
 # Reporter metabolites (plain bash, no Snakemake)
 # Runs Scripts/RScripts/DAA_RM.R: DAA of the species with MaAsLin2, microbe-metabolite network
 # from the mandatory exchange reactions (--fva), and directional reporter metabolites.
-# Inputs: <abundance>/<sample>/*.map, <classification>/<sample>/*_gtdbtk_summary.tsv,
+# Inputs: <abundance>/<sample>/*.map, <reassembled>/<sample>/<sample>/reassembled_bins.stats,
+# <classification>/<sample>/*_gtdbtk_summary.tsv,
 # <fva>/fva_mandatory_exchange.txt and the --metadata file. Output: <output>/<reporter>/
 # ================================
 run_reporter_bash() {
     log_info "Running: $(get_module_desc reporter) (reporter) in bash, without Snakemake"
 
-    local abund_root taxo_root fva_file out_dir daa_rm
+    local abund_root reassembled_root taxo_root fva_file out_dir daa_rm
     abund_root="$OUTPUT_DIR/$(read_config_value folder abundance)"
+    reassembled_root="$OUTPUT_DIR/$(read_config_value folder reassembled)"
     taxo_root="$OUTPUT_DIR/$(read_config_value folder classification)"
     fva_file="$OUTPUT_DIR/$(read_config_value folder fva)/fva_mandatory_exchange.txt"
     out_dir="$OUTPUT_DIR/$(read_config_value folder reporter)"
@@ -331,11 +332,12 @@ run_reporter_bash() {
     [[ -f "$daa_rm" ]] || { log_error "Rscripts: DAA_RM not found in $CONFIG_FILE: $daa_rm"; return 1; }
     [[ -f "$METADATA_FILE" ]] || { log_error "Metadata file not found: $METADATA_FILE (--metadata)"; return 1; }
     [[ -d "$abund_root" ]] || { log_error "Abundance folder not found: $abund_root (run --abundance first)"; return 1; }
+    [[ -d "$reassembled_root" ]] || { log_error "Reassembled bins folder not found: $reassembled_root (run --reassembly first)"; return 1; }
     [[ -d "$taxo_root" ]] || { log_error "Taxonomy folder not found: $taxo_root (run --taxonomy first)"; return 1; }
     [[ -f "$fva_file" ]] || { log_error "FVA file not found: $fva_file (run --fva first)"; return 1; }
     command -v Rscript &> /dev/null || { log_error "Rscript is not installed or not in PATH"; return 1; }
 
-    log_info "Metadata: $METADATA_FILE (fixed effect: $FIXED_EFFECT, random effect: $RANDOM_EFFECT)"
+    log_info "Metadata: $METADATA_FILE (group column: $FIXED_EFFECT)"
     if [[ "$DRY_RUN" == true ]]; then
         log_info "[dry-run] would run $daa_rm and write the results to $out_dir"
         return 0
@@ -360,9 +362,26 @@ run_reporter_bash() {
     done
     [[ $(wc -l < "$summary") -gt 1 ]] || { log_error "No .map files in $abund_root/<sample>/"; return 1; }
 
+    # CheckM completeness and contamination of each reassembled bin (reassembled_bins.stats of
+    # --reassembly), bin names as above; bins below the reporter cutoffs are left out of the DAA
+    local checkm_summary="$out_dir/checkm.summary.txt" stats_file comp_cutoff cont_cutoff
+    printf 'Sample\tBin\tcompleteness\tcontamination\n' > "$checkm_summary"
+    for stats_file in "$reassembled_root"/*/*/reassembled_bins.stats; do
+        [[ -f "$stats_file" ]] || continue
+        sample=$(basename "$(dirname "$(dirname "$stats_file")")")
+        awk -v OFS='\t' -v sample="$sample" '
+            NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i; next }
+            { bin = $1; sub(/\.orig$/, ".o", bin); sub(/\.strict$/, ".s", bin); sub(/\.permissive$/, ".p", bin)
+              print sample, bin, $col["completeness"], $col["contamination"] }' "$stats_file" >> "$checkm_summary"
+    done
+    [[ $(wc -l < "$checkm_summary") -gt 1 ]] || { log_error "No reassembled_bins.stats in $reassembled_root/<sample>/<sample>/"; return 1; }
+    comp_cutoff=$(read_config_value params reporterComp)
+    cont_cutoff=$(read_config_value params reporterCont)
+
     log_info "Now running DAA, microbe-metabolite network and reporter metabolites ..."
     Rscript "$daa_rm" "$summary" "$out_dir/taxonomy" "$METADATA_FILE" "$fva_file" "$out_dir" \
-        "$FIXED_EFFECT" "$RANDOM_EFFECT" 2>&1 | tee "$out_dir/DAA_RM.Rlog"
+        "$FIXED_EFFECT" "$checkm_summary" "${comp_cutoff:-70}" "${cont_cutoff:-10}" \
+        2>&1 | tee "$out_dir/DAA_RM.Rlog"
     [[ ${PIPESTATUS[0]} -eq 0 ]] || { log_error "DAA_RM.R failed, see $out_dir/DAA_RM.Rlog"; return 1; }
 
     log_success "Reporter metabolites written to $out_dir"
@@ -453,8 +472,7 @@ OPTIONS:
 REPORTER OPTIONS (--reporter):
   --metadata <file>           Sample metadata (required): tab-separated, first column = sample ID
   --fixed-effect <col>        Metadata column with the two groups compared (default: Group);
-                              extra covariates comma separated, e.g. Group,Age
-  --random-effect <col>       Metadata column for paired / repeated samples (default: none)
+                              MaAsLin2 uses this column only (no covariates, no paired design)
 
 WORKFLOW GROUPS:
   --preprocessing   quality, trim, assembly
@@ -497,7 +515,7 @@ EXAMPLES:
 
   # DAA, microbe-metabolite network and reporter metabolites
   bash $0 -o ./output -c test -d ./Toy_Dataset --reporter \\
-      --metadata metadata.tsv --fixed-effect Group --random-effect subject
+      --metadata metadata.tsv --fixed-effect Group
 EOF
 }
 
@@ -529,10 +547,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fixed-effect)
             FIXED_EFFECT="$2"
-            shift 2
-            ;;
-        --random-effect)
-            RANDOM_EFFECT="$2"
             shift 2
             ;;
         -s|--scripts-dir)
